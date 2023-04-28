@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbital_mechanics_Gagandeep_Thapar"
+version = "0.0.1"
+authors = [
+  { name="Gagandeep Thapar", email="gsthapar+om_pkg@gmail.com" },
+]
+description = "Small and simple package for basic Orbital Mechanics principles. Structured after Cal Poly SLO AERO Orbits I-III"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/gagandeepthapar/OrbitalMechanics"
+"Bug Tracker" = "https://github.com/gagandeepthapar/OrbitalMechanics/issues"
