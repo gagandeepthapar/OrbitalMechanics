@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import astroconsts as c
+from . import astroconsts as ast
 
 # pylint: disable=pointless-string-statement
 
@@ -247,14 +247,14 @@ def juliandate(calendar_date: datetime):
     return yr_calc + mo_calc + day_calc + time_calc
 
 
-def coes_to_statevector(coes: COES, mu: float = c.EARTH_MU) -> np.ndarray:
+def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
     """
     Convert COES to State Vector: R, V
 
     Args:
         coes (COES): orbital COES
         mu (float, optional): Gravitational parameter of central body.
-        Defaults to c.EARTH_MU.
+        Defaults to ast.EARTH_MU.
 
     Returns:
         np.ndarray: 6x1 state vector: [Rx, Ry, Rz, Vx, Vy, Vz]
@@ -282,7 +282,7 @@ def coes_to_statevector(coes: COES, mu: float = c.EARTH_MU) -> np.ndarray:
     return np.append(r_km, v_kms)
 
 
-def statevector_to_coes(statevector: List, mu: int = c.EARTH_MU) -> COES:
+def statevector_to_coes(statevector: List, mu: int = ast.EARTH_MU) -> COES:
     """
     Calculate Classical Orbital Elements from State Vector
     Adapted from Algorithm 9: "Fundamentals of Astrodynamics and Applications", Vallado
@@ -333,8 +333,8 @@ def statevector_to_coes(statevector: List, mu: int = c.EARTH_MU) -> COES:
     if v_r < 0:
         theta = 2 * np.pi - theta
 
-    rp = h**2 / c.EARTH_MU * 1 / (1 + ecc)
-    ra = h**2 / c.EARTH_MU * 1 / (1 - ecc)
+    rp = h**2 / ast.EARTH_MU * 1 / (1 + ecc)
+    ra = h**2 / ast.EARTH_MU * 1 / (1 - ecc)
     semi = 0.5 * (ra + rp)
 
     return COES(
@@ -358,36 +358,222 @@ CORE FUNCTIONS
 """
 
 
-# basic two_body_prop
-def two_body() -> np.ndarray:
-    # TODO: Implement
+def two_body(time: float, state: np.ndarray, mu: float = ast.EARTH_MU) -> np.ndarray:
+    """
+    Basic Two-Body Propagation; to be used in ODE function
+    Args:
+        time[float]: time argument for ODE
+        state[np.ndarray]: state vector of two body propagation
+            in form of [Rx, Ry, Rz, Vx, Vy, Vz]
+        mu[float, Optional]: gravitational parameter of central body.
+            Defaults to EarthMU
+
+    Returns:
+        np.ndarray: derivative of state vector in two-body orbit
+    """
+    _r_vec = state[:3]
+    _v_vec = state[3:]
+    _r_norm = np.linalg.norm(_r_vec)
+    _a_vec = -mu * _r_vec / (_r_norm**3)
+
+    _dstate = np.array([*_v_vec, *_a_vec])
+    return _dstate
+
+
+def stumpff_S(z: float) -> float:
+    """
+    Stumpff S Function
+
+    Args:
+        z (float): Z-Value
+
+    Returns:
+        float: Result of Function
+    """
+
+    if z > 0:
+        return (np.sqrt(z) - np.sin(np.sqrt(z))) / (np.sqrt(z) ** 3)
+    if z < 0:
+        return ((np.sinh(np.sqrt(-z)) - np.sqrt(-z))) / (np.sqrt(z) ** 3)
+    return 1 / 6
+
+
+def stumpff_C(z: float) -> float:
+    """
+    Stumpff C Function
+
+    Args:
+        z (float): Z-Value
+
+    Returns:
+        float: Result of Function
+    """
+
+    if z > 0:
+        return (1 - np.cos(np.sqrt(z))) / z
+    if z < 0:
+        return (np.cosh(np.sqrt(-z)) - 1) / (-z)
+
+    return 1 / 2
+
+
+def la_grange_coefficients(
+    alpha: float,
+    R0: np.ndarray,
+    V0: np.ndarray,
+    delta_t: float,
+    X: float,
+    mu: int = ast.EARTH_MU,
+) -> np.ndarray:
+    """
+    Method to compute LaGrange Coefficients: f, g, fdot, gdot
+    Args:
+        alpha (float): alpha value
+        R0 (np.ndarray): position vector
+        V0 (np.ndarray): velocity vector
+        delta_t (float): time delta
+        X (float): Universal Variable
+        mu (int): Gravitational parameter of central body
+
+    Returns:
+        np.ndarray: LaGrange Coefficients in order [f, g, fdot, gdot]
+    """
+
+    r0 = np.linalg.norm(R0)
+
+    f = 1 - X**2 / r0 * stumpff_C(alpha * X**2)
+    g = delta_t - 1 / np.sqrt(mu) * X**3 * stumpff_S(alpha * X**2)
+
+    rf_vec = f * R0 + g * V0
+    rf = np.linalg.norm(rf_vec)
+
+    fdot = np.sqrt(mu) / (rf * r0) * (alpha * X**3 * stumpff_S(alpha * X**2) - X)
+    gdot = 1 - X**2 / rf * stumpff_C(alpha * X**2)
+
+    return np.array([f, g, fdot, gdot])
+
+
+def lambert_problem_solver(
+    R0: np.ndarray, R1: np.ndarray, delta_t: float, *, traj_type: int = 1
+) -> List[np.ndarray]:
+    """
+    Lambert's Problem Solver:
+        Solve for Velocity at Time 1, V1, and at Time 2, V2
+        Given Position at Time 1, R1, and at Time 2, R2,
+        and delta-T
+
+    Adapted from Alg D.25 from "Orbital Mechanics for Engineering Students", Curtis
+
+    Args:
+        R0 (np.ndarray):
+        R1 (np.ndarray):
+        delta_t (float):
+        traj_type (int): Prograde (1) or Retrograde (-1). Default Prograde
+
+    Returns:
+        List[np.ndarray]: 2-element list; first element is Velocity at Time 1
+            second element is Velocity at Time 2
+    """
+
+    R0 = np.array(R0)
+    R1 = np.array(R1)
+
+    r1 = np.sqrt(R0.dot(R0))
+    r2 = np.sqrt(R1.dot(R1))
+
+    c12 = np.cross(R0, R1)
+    theta = np.arccos(R0.dot(R1) / (r1 * r2))
+
+    if traj_type == 1:
+        if c12[2] <= 0:
+            theta = 2 * np.pi - theta
+
+    if traj_type == -1:
+        if c12[2] >= 0:
+            theta = 2 * np.pi - theta
+
+    A = np.sin(theta) * np.sqrt(r1 * r2 / (1 - np.cos(theta)))
+
+    z = -100
+
+    raise NotImplementedError("TODO: Implement Lambert Problem Solver")
     return
 
 
-def stumpff_s() -> float:
-    # TODO: Implement
-    return
+def universal_variable_propagation(
+    R0: Union[np.ndarray, List],
+    V0: Union[np.ndarray, List],
+    delta_t: float,
+    mu: int = ast.EARTH_MU,
+) -> np.ndarray:
+    """
+    Universal Variable Method for Orbit Propagation
+    Adapted from Alg. 3.4 from "Orbital Mechanics for Engineering Students", Curtis
 
+    Args:
+        R0 (np.ndarray): Position at Time 1
+        V0 (np.ndarray): Position at Time 2
+        delta_t (float): Time of propagation
+        mu (int): Gravitational parameter of central body
 
-def stumpff_c() -> float:
-    # TODO: Implement
-    pass
-    return
+    Returns:
+        np.ndarray: State Vector at final time with format:
+            [Rx, Ry, Rz, Vx, Vy, Vz]
+    """
 
+    def compute_universal_variable(
+        r0: float, vr0: float, alpha: float, delT: float, mu: int
+    ) -> float:
+        """
+        Inner function to compute universal variable, X
+        """
+        abs_tol = 1e-8
+        nMax = 1000
+        n = 0
+        ratio = 1
 
-def la_grange():
-    # TODO: Implement
-    pass
-    return
+        # initial guess
+        x = np.sqrt(mu) * np.abs(alpha) * delT
 
+        # Newton's Iteration to find true X
+        while np.abs(ratio) > abs_tol and n < nMax:
+            n += 1
+            C = stumpff_C(alpha * x**2)
+            S = stumpff_S(alpha * x**2)
 
-def lambert_velocity_solver():
-    # TODO: Implement
-    pass
-    return
+            F = (
+                r0 * vr0 / np.sqrt(mu) * x**2 * C
+                + (1 - alpha * r0) * x**3 * S
+                + r0 * x
+                - np.sqrt(mu) * delT
+            )
 
+            Fp = (
+                r0 * vr0 / np.sqrt(mu) * x * (1 - alpha * x**2 * S)
+                + (1 - alpha * r0) * x**2 * C
+                + r0
+            )
 
-def universal_variable_propagation():
-    # TODO Implement
-    pass
-    return
+            ratio = F / Fp
+            x = x - ratio
+
+        return x
+
+    R0 = np.array(R0)
+    V0 = np.array(V0)
+
+    r0 = np.sqrt(R0.dot(R0))
+    v0 = np.sqrt(V0.dot(V0))
+    vr0 = V0.dot(R0) / r0
+
+    alpha = 2 / r0 - v0**2 / mu
+
+    X = compute_universal_variable(r0, vr0, alpha, delta_t, mu)
+    la_grange_coeff = la_grange_coefficients(alpha, R0, V0, delta_t, X, mu)
+
+    [f, g, fdot, gdot] = la_grange_coeff
+
+    RF = f * R0 + g * V0
+    VF = fdot * R0 + gdot * V0
+
+    return np.array([*RF, *VF])
