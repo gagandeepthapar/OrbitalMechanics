@@ -591,6 +591,39 @@ def solve_two_body(
     return pd.DataFrame(data)
 
 
+def ivp_result_to_dataframe(
+    ivp_sol: OdeResult, labels: List = ["RX", "RY", "RZ", "VX", "VY", "VZ"]
+) -> pd.DataFrame:
+    """
+    Convert ODE Result from `solve_ivp` to dataframe with specified labels
+        for easy extraction
+
+    Args:
+        ivp_sol (OdeResult): output from `solve_ivp`; contains time and state data
+        labels (List): List of labels to apply to each state *in order in which they
+            appear* Defaults to ['RX', 'RY', 'RZ', 'VX', 'VY', 'VZ']
+
+    Returns:
+        Dataframe: dataframe of data with associated column titles
+    """
+
+    time = ivp_sol["t"]
+    states = ivp_sol["y"]
+
+    fdata = {"TIME": time}
+
+    if len(labels) != len(states):
+        raise IndexError(
+            f"Insufficient Number of Labels/States. {len(labels)} "
+            f"Labels provided and {len(states)} States in ODE Result."
+        )
+
+    for label, data in zip(labels, states):
+        fdata[label] = data
+
+    return pd.DataFrame(fdata)
+
+
 def stumpff_S(z: float) -> float:
     """
     Stumpff S Function
