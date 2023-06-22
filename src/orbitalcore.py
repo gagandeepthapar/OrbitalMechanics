@@ -547,6 +547,50 @@ def two_body(time: float, state: np.ndarray, mu: int = ast.EARTH_MU) -> np.ndarr
     return _dstate
 
 
+def solve_two_body(
+    state0: Union[np.ndarray, StateVector],
+    tspan: np.ndarray,
+    mu: int = ast.EARTH_MU,
+    atol: float = 1e-8,
+    rtol: float = 1e-8,
+) -> pd.DataFrame:
+    """
+    ODE45 to solve two-body problem with tolerance and gravitational parameter arguments
+    Formats output into dataframe for simple extraction; can be extracted with
+        `frame.TIME, frame.RX, frame.RY, etc.` to extract arrays from dataframe
+
+    Args:
+        state0 (Union[np.ndarray, StateVector]): initial state either as 6-element
+            vector or StateVector class
+        tspan (np.ndarray): 2-element vector for initial and final time
+        mu (int, Optional): Gravitational parameter of central body. Defaults to Earth.
+        atol (float): Absolute tolerance for ODE45. Defaults to 1e-8
+        rtol (float): Relative tolerance for ODE45. Defaults to 1e-8
+
+    Returns:
+        pd.DataFrame: dataframe of time and state history of orbit given conditions
+
+    """
+
+    # convert to array if in state vector form
+    if isinstance(state0, StateVector):
+        state0 = state0.to_arr()
+
+    # solve IVP
+    ode_sol: OdeResult = solve_ivp(
+        two_body, tspan, state0, args=(mu,), atol=atol, rtol=rtol
+    )
+
+    time = ode_sol["t"]
+    state = ode_sol["y"]
+
+    [rx, ry, rz, vx, vy, vz] = state
+
+    data = {"TIME": time, "RX": rx, "RY": ry, "RZ": rz, "VX": vx, "VY": vy, "VZ": vz}
+
+    return pd.DataFrame(data)
+
+
 def stumpff_S(z: float) -> float:
     """
     Stumpff S Function
