@@ -309,6 +309,41 @@ def juliandate(calendar_date: datetime):
     return yr_calc + mo_calc + day_calc + time_calc
 
 
+def local_sidereal_time(date: datetime, east_long: float) -> float:
+    """
+    Compute local sidereal time from date
+    Adapted from Algorithm 5.3 in "Orbital Mechanics for Engineering Students", Curtis
+
+    Args:
+        date (datetime): calendar date to compute lst from
+        east_long (float): east longitude of site from greenwich
+
+    Returns:
+        lst (float): local sidereal time at longitude of site
+
+    """
+
+    # calc julian date
+    J_0 = juliandate(date)
+
+    # calc greenwich sidereal time
+    T_0 = (J_0 - 2_451_545) / (36_525)
+
+    # eqn. 5.50 in curtis
+    theta_g0 = (
+        100.4606184 + 36_000.77004 * T_0 + 0.000387933 * T_0**2 - 2.583e-8 * T_0**3
+    )
+    theta_g0 = np.mod(theta_g0, 360)
+
+    # eqn 5.51 in curtis
+    theta_g = theta_g0 + 360.98564724 * date.hour / 24
+
+    # eqn 5.52 in curtis
+    lst = theta_g + east_long
+
+    return lst
+
+
 def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
     """
     Convert COES to State Vector: R, V
@@ -407,20 +442,82 @@ def statevector_to_coes(
     ra = h**2 / ast.EARTH_MU * 1 / (1 - ecc)
     semi = 0.5 * (ra + rp)
 
-    return COES(
-        h,
-        ecc,
-        np.rad2deg(inc),
-        np.rad2deg(raan),
-        np.rad2deg(w),
-        np.rad2deg(theta),
-        semi,
-    )
+    return COES(ecc, inc, raan, w, theta, h, semi)
 
 
-def two_line_element_to_coes() -> COES:
-    # TODO: Implement
-    return
+def tle_to_coes(tle: np.ndarray, mu: int = ast.EARTH_MU) -> COES:
+    """
+    Convert two-line element to classical orbital elements.
+    Requires some user-supplied work to format TLE properly; only second line required
+
+    Args:
+        tle (np.ndarray): second line of TLE in following format:
+            inclination (deg),
+            raan (deg),
+            eccentricity (-),
+            argument of perigee (deg),
+            mean anomaly (deg),
+            mean motion (rev/day),
+
+            the second line is already formatted properly with the correct units
+        mu (int): gravitational parameter of central body. Defaults to Earth
+
+    Returns:
+        COES: COES object described by TLE
+
+    """
+
+    [inc_deg, raan_deg, ecc, arg_deg, anom_deg, mean_mot] = tle
+
+    # convert from deg to rad
+    inc_rad = np.deg2rad(inc_deg)
+    raan_rad = np.deg2rad(raan_deg)
+    arg_rad = np.deg2rad(arg_deg)
+
+    Me = np.deg2rad(anom_deg)
+
+    if Me < np.pi:
+        E_0 = Me - ecc
+
+    else:
+        E_0 = Me + ecc
+
+    # functions to compute theta using Newton's Iteration
+    def f(E: float) -> float:
+        """
+        Eqn 1 for Newton's Iteration
+        """
+        return Me - E + ecc * np.sin(E)
+
+    def fp(E: float) -> float:
+        """
+        Eqn 2 for Newton's Iteration
+        """
+        return -1 + ecc * np.sin(E)
+
+    # calc dE_0, error
+    err = 1
+    count = 1
+    while err > 1e-8 and count < 1_000:
+        E_1 = E_0 - (f(E_0) / fp(E_0))
+        err = np.abs(E_1 - E_0)
+        E_0 = E_1
+        count += 1
+
+    # compute theta
+    theta = 2 * np.arctan((np.sqrt((1 + ecc) / (1 - ecc)) * np.tan(E_0 / 2)))
+    theta = np.mod(theta, 2 * np.pi)
+
+    # calc period of orbit
+    T = (24 * 3_600 * 3_600) * 1 / mean_mot
+
+    # compute semi-major axis
+    a = (T * np.sqrt(mu) / (2 * np.pi)) ** (2 / 3)
+
+    # compute ang mom
+    h = np.sqrt(a * mu * (1 - ecc**2))
+
+    return COES(ecc, inc_rad, raan_rad, arg_rad, theta, h, a)
 
 
 """
