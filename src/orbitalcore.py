@@ -1,12 +1,20 @@
+"""
+orbitalcore 
+Core module for majority of orbital mechanics functions
+"""
+
 from datetime import datetime
 from typing import List, Optional, Union
 from dataclasses import dataclass
+from matplotlib.pyplot import thetagrids
+from scipy.integrate import solve_ivp
+from scipy.integrate._ivp.ivp import OdeResult
 
 import numpy as np
+import pandas as pd
 
 from . import astroconsts as ast
 
-# pylint: disable=pointless-string-statement
 
 """
 ORBITAL CLASSES
