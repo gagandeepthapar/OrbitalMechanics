@@ -2,13 +2,12 @@
 Set of Orbital Mechanics functions transcribed from MATLAB or textbooks in Python to support larger Orbital Mechanics projects and classes.
 
 ## Structure
-The repository is broken up into 5 main categories:
+The repository is broken up into 4 main packages:
 
-- Basic Orbital Mechanics
-- Rendezvous/Relative Motion Mechanics 
-- Perturbational Effects 
-- Observations/Filtering
-- Optimal Transfer
+- orbitalcore (Basic Orbital Mechanics)
+- relativemotion (Rendezvous/Relative Motion Mechanics) 
+- perturbations (Perturbational Effects) 
+- observations (Observations/Filtering)
 
 This structure closely follows the breakdown of the Orbital Mechanics path at California Polytechnic State University - San Luis Obispo: AERO 351 (Basic Orbital Mechanics), AERO 452 (Rendezvous/Relative Motion, Perturbational Effects), and AERO 557 (Observations/Filtering, Optimal Transfer).
 
