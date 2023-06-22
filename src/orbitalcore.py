@@ -665,24 +665,29 @@ def la_grange_coefficients(
 
 
 def lambert_problem_solver(
-    R0: np.ndarray, R1: np.ndarray, delta_t: float, *, traj_type: int = 1
-) -> List[np.ndarray]:
+    R0: np.ndarray,
+    R1: np.ndarray,
+    delta_t: float,
+    traj_type: int = 1,
+    mu: int = ast.EARTH_MU,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Lambert's Problem Solver:
-        Solve for Velocity at Time 1, V1, and at Time 2, V2
-        Given Position at Time 1, R1, and at Time 2, R2,
+        Solve for Velocity at Time 1, V0, and at Time 2, V1
+        Given Position at Time 1, R0, and at Time 2, R1,
         and delta-T
 
-    Adapted from Alg D.25 from "Orbital Mechanics for Engineering Students", Curtis
+        Adapted from Alg. 5.2 from "Orbital Mechanics for Engineering Students", Curtis
 
     Args:
-        R0 (np.ndarray):
-        R1 (np.ndarray):
-        delta_t (float):
+        R0 (np.ndarray): position at time 1
+        R1 (np.ndarray): position at time 2
+        delta_t (float): time between R0, R1 [sec]
         traj_type (int): Prograde (1) or Retrograde (-1). Default Prograde
+        mu (int): gravitational parameter of central body. Defaults to Earth.
 
     Returns:
-        List[np.ndarray]: 2-element list; first element is Velocity at Time 1
+        tuple[np.ndarray]: 2-element tuple; first element is Velocity at Time 1
             second element is Velocity at Time 2
     """
 
@@ -704,12 +709,74 @@ def lambert_problem_solver(
         if c12[2] >= 0:
             theta = 2 * np.pi - theta
 
+    # semi-global variables with scope in Fz, dFdz for newton's iteration
     A = np.sin(theta) * np.sqrt(r1 * r2 / (1 - np.cos(theta)))
-
     z = -100
 
-    raise NotImplementedError("TODO: Implement Lambert Problem Solver")
-    return
+    def y_z(z: float) -> float:
+        return r1 + r2 + A * (z * stumpff_S(z) - 1) / (np.sqrt(stumpff_C(z)))
+
+    def F_z(z: float, t: float) -> float:
+        """
+        Eqn. 5.40 in Curtis, Newton's Method first eqn
+        """
+
+        a = (y_z(z) / stumpff_C(z)) ** (3 / 2) * stumpff_S(z)
+        b = A * np.sqrt(y_z(z))
+        c = -np.sqrt(mu) * delta_t
+
+        return a + b + c
+
+    def dF_dz(z: float, t: float) -> float:
+        """
+        Eqn. 5.43 in Curtis, Newton's Method second eqn
+        """
+
+        if z == 0:
+            a = np.sqrt(2) / 40 * y_z(0) ** (3 / 2)
+            b = np.sqrt(y_z(0))
+            c = A * np.sqrt(1 / (2 * y_z(0)))
+
+            dF = a + A / 8 * (b + c)
+
+        else:
+            a = (y_z(z) / stumpff_C(z)) ** (3 / 2)
+            b = 1 / (2 * z) * (stumpff_C(z) - 3 * stumpff_S(z) / (2 * stumpff_C(z)))
+            c = 3 * stumpff_S(z) ** 2 / (4 * stumpff_C(z))
+
+            dF_a = a * (b + c)
+
+            d = 3 * stumpff_S(z) / stumpff_C(z) * np.sqrt(y_z(z))
+            f = A * np.sqrt(stumpff_C(z) / y_z(z))
+
+            dF_b = A / 8 * (d + f)
+
+            dF = dF_a + dF_b
+
+        return dF
+
+    # find approx z-value near sign switch
+    while F_z(z, delta_t) > 0:
+        z += 0.1
+
+    # solve Newton's iteration
+    ratio = 1
+    it_count = 0
+    while (np.abs(ratio) > 1e-8) and (it_count < 10_000):
+        it_count += 1  # increment iteration counter
+        ratio = F_z(z, delta_t) / dF_dz(z, delta_t)  # recalc ratio
+        z -= ratio
+
+    # calc lagrange coefficients
+    f = 1 - y_z(z) / r1
+    g = A * np.sqrt(y_z(z) / mu)
+    gdot = 1 - y_z(z) / r2
+
+    # calc V0, V1
+    V1: np.ndarray = 1 / g * (R1 - f * R0)
+    V0: np.ndarray = 1 / g * (gdot * R1 - R0)
+
+    return (V0, V1)
 
 
 def universal_variable_propagation(
@@ -769,8 +836,10 @@ def universal_variable_propagation(
             ratio = F / Fp
             x = x - ratio
 
+        # return best guess to universal variable
         return x
 
+    # create np arrays of inputs
     R0 = np.array(R0)
     V0 = np.array(V0)
 
@@ -783,9 +852,11 @@ def universal_variable_propagation(
     X = compute_universal_variable(r0, vr0, alpha, delta_t, mu)
     la_grange_coeff = la_grange_coefficients(alpha, R0, V0, delta_t, X, mu)
 
+    # unpack coefficients from array
     [f, g, fdot, gdot] = la_grange_coeff
 
     RF = f * R0 + g * V0
     VF = fdot * R0 + gdot * V0
 
+    # return 6-element state vector at final time
     return np.array([*RF, *VF])
