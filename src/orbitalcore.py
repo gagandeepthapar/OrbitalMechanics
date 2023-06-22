@@ -6,7 +6,6 @@ Core module for majority of orbital mechanics functions
 from datetime import datetime
 from typing import List, Optional, Union
 from dataclasses import dataclass
-from matplotlib.pyplot import thetagrids
 from scipy.integrate import solve_ivp
 from scipy.integrate._ivp.ivp import OdeResult
 
@@ -47,19 +46,20 @@ class COES:
     theta_rad: float
     h: Optional[float] = None
     semi_major: Optional[float] = None
+    mu: Optional[int] = ast.EARTH_MU
 
     def __post_init__(self):
         if (self.h is None) and (self.semi_major is None):
             raise AttributeError(
-                "Must provide at least angular momentum (h)" "or semi-major axis (km)"
+                "Must provide at least angular momentum (h)"
+                "or semi-major axis (semi_major / a)"
             )
 
-        # TODO: Implement conversion from h to a, a to h
         if self.h is None:
-            self.h = 0.1
+            self.h: float = np.sqrt(self.semi_major * self.mu * (1 - self.ecc**2))
 
         if self.semi_major is None:
-            self.semi_major = 0.1
+            self.semi_major: float = self.h**2 / self.mu * 1 / (1 - self.ecc**2)
 
         return
 
@@ -147,6 +147,49 @@ GENERIC FUNCTIONS
 """
 
 
+# Math
+def cosd(ang: float) -> float:
+    """
+    MATLAB-esque method for cosine of degree value
+    """
+    return np.cos(np.deg2rad(ang))
+
+
+def sind(ang: float) -> float:
+    """
+    MATLAB-esque method for sine of degree value
+    """
+    return np.sin(np.deg2rad(ang))
+
+
+def tand(ang: float) -> float:
+    """
+    MATLAB-esque method for tangent of degree value
+    """
+    return np.tan(np.deg2rad(ang))
+
+
+def acosd(val: float) -> float:
+    """
+    MATLAB-esque method for returning degrees of arccosine of value
+    """
+    return np.rad2deg(np.arccos(val))
+
+
+def asind(val: float) -> float:
+    """
+    MATLAB-esque method for returning degrees of arcsine of value
+    """
+    return np.rad2deg(np.arcsin(val))
+
+
+def atand(val: float) -> float:
+    """
+    MATLAB-esque method for returning degrees of arctangent of value
+    """
+    return np.rad2deg(np.arctan(val))
+
+
 # Rotation Matrices
 def rot_z(theta: float) -> np.ndarray:
     """
@@ -208,15 +251,26 @@ def rot_x(theta: float) -> np.ndarray:
     )
 
 
-# plotters
-def plot_earth():
-    # TODO: Implement
-    return
+def sphere_data(rad: float = 1.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Method to return array of arrays that describe a sphere with supplied radius.
+    Data is useful when using `plot_surface` method from Matplotlib
 
+    Args:
+        rad (float): radius of sphere to return. Defaults to 1
 
-def plot_orbit():
-    # TODO: Implement
-    return
+    Returns:
+        x (np.ndarray): x surface
+        y (np.ndarray): y surface
+        z (np.ndarray): z surface
+    """
+
+    u, v = np.mgrid[0 : 2 * np.pi : 30j, 0 : np.pi : 20j]
+    x = rad * np.cos(u) * np.sin(v)
+    y = rad * np.sin(u) * np.sin(v)
+    z = rad * np.cos(v)
+
+    return (x, y, z)
 
 
 """
@@ -267,7 +321,7 @@ def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
     Returns:
         np.ndarray: 6x1 state vector: [Rx, Ry, Rz, Vx, Vy, Vz]
     """
-    h = coes.h
+    h: float = coes.h
     ecc = coes.ecc
     inc = coes.inc_rad
     raan = coes.raan_rad
@@ -290,21 +344,29 @@ def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
     return np.append(r_km, v_kms)
 
 
-def statevector_to_coes(statevector: List, mu: int = ast.EARTH_MU) -> COES:
+def statevector_to_coes(
+    state: Union[List, np.ndarray, StateVector], mu: int = ast.EARTH_MU
+) -> COES:
     """
     Calculate Classical Orbital Elements from State Vector
     Adapted from Algorithm 9: "Fundamentals of Astrodynamics and Applications", Vallado
 
     Args:
-        statevector (np.ndarray): state vector (rx, ry, rz, vx, vy, vz)
+        state (List, np.ndarray, StateVector): state vector (rx, ry, rz, vx, vy, vz)
         mu (int, optional): central body grav parameter. Defaults to EARTH_MU.
 
     Returns:
         COES: COES object containing orbital information
     """
 
-    r = np.array(statevector[:3])
-    v = np.array(statevector[3:])
+    # convert to array if in state class
+    if isinstance(state, StateVector):
+        state = state.to_arr()
+
+    # convert to np array if List
+    state = np.array(state)
+    r = np.array(state[:3])
+    v = np.array(state[3:])
     R = np.linalg.norm(r)
     V = np.linalg.norm(v)
     v_r = np.dot(r, v) / R
@@ -366,7 +428,7 @@ CORE FUNCTIONS
 """
 
 
-def two_body(time: float, state: np.ndarray, mu: float = ast.EARTH_MU) -> np.ndarray:
+def two_body(time: float, state: np.ndarray, mu: int = ast.EARTH_MU) -> np.ndarray:
     """
     Basic Two-Body Propagation; to be used in ODE function
     Args:
@@ -492,6 +554,7 @@ def lambert_problem_solver(
     c12 = np.cross(R0, R1)
     theta = np.arccos(R0.dot(R1) / (r1 * r2))
 
+    # assert theta based on progression of orbit
     if traj_type == 1:
         if c12[2] <= 0:
             theta = 2 * np.pi - theta
