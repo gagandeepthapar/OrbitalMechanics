@@ -18,3 +18,7 @@ The approach in building this repository was to avoid using unnecessary classes 
 I hope students will continue to add on to this package and improve usability for the curriculum. My intentions were to provide resources (e.g., pointing to specific textbooks/algorithms) for people to refer back to and ensure the code is very readable.
 
 Extensions/additional functions should always include type-hinting in the arguments and return statement and should include docstrings at the top of each function for context. The function docstring should include the purpose, where the function is adapted from (e.g., "Orbital Mechanics for Engineering Students", Curtis), and the explanations for each input and return argument.
+
+Do as I say and not as I do and use proper git-techniques by creating branches from main to develop features/fixes and pulling into `main` as opposed to developing everything directly in `main`.
+
+Organize the package thoughtfully. Only put core methods in `orbitalcore`, perturbations in `perturbations`, etc. If a method is sufficiently unique then feel free to create a new module e.g., for optimal orbit transfers.
