@@ -271,9 +271,81 @@ def solar_position(juliandate: float) -> np.ndarray:
     return r_S
 
 
-def solar_radiation_perturbation():
-    raise NotImplementedError
-    return
+def shadow_function(
+    r_earth_sc: Union[List, np.ndarray],
+    juliandate: float,
+) -> bool:
+    """
+    Function to determine if satellite in Earth shadow or exposed to Sun
+    Adapted from Algorithm 10.3 from "Orbtial Mechanics for Engineers", Curtis
+
+     Args:
+        r_earth_sc (Union[List, np.ndarray]): position of sat w.r.t. Earth
+        juliandate (float): juliandate for satellite for solar position
+
+    Returns:
+        shadow (bool): True if satellite is eclipsed. False if satellite is exposed.
+    """
+
+    # conv to np arrays
+    r_earth_sc = np.array(r_earth_sc)
+    r_earth_sun = solar_position(juliandate)
+
+    # get magnitude of positions
+    r_esc = np.sqrt(r_earth_sc.dot(r_earth_sc))
+    r_esu = np.sqrt(r_earth_sun.dot(r_earth_sun))
+
+    # calc view angles (eqn. 10.113, 10.114)
+    theta = np.arccos((r_earth_sun.dot(r_earth_sc)) / (r_esc * r_esu))
+    theta1 = np.arccos(ast.EARTH_RAD / r_esc)
+    theta2 = np.arccos(ast.EARTH_RAD / r_esu)
+
+    return theta1 + theta2 < theta
+
+
+def solar_radiation_perturbation(
+    r_earth_sc: Union[List, np.ndarray],
+    juliandate: float,
+    surf_area: float = 1,
+    mass: float = 10,
+    coeff_ref: float = 1,
+) -> np.ndarray:
+    """
+    Computation of perturbations due to solar radiation pressure
+    Adapted from Alg. 10.3, Eqn. 10.98 from Curtis
+
+    Args:
+        r_earth_sc (Union[List, np.ndarray]): position of sat w.r.t. Earth
+        juliandate (float): juliandate for satellite for solar position
+        surf_area (float): surface area of satellite [m2]. Defaults to 1.
+        mass (float): mass of satellite [kg]. Defaults to 10
+        coeff_ref (float): Reflectivity of satellite. Defaults to 1
+
+    Returns:
+        a_pert (np.ndarray): disturbance acceleration due to SRP:
+            [ax, ay, az]
+    """
+
+    # conv to np arrays
+    r_earth_sc = np.array(r_earth_sc)
+    r_earth_sun = solar_position(juliandate)
+
+    # get magnitude of positions
+    r_esu = np.sqrt(r_earth_sun.dot(r_earth_sun))
+
+    # compute perturbation
+    a_pert = np.array([0, 0, 0])
+
+    # determine if sat in shade or not (shadow function)
+    eclipsed = shadow_function(r_earth_sc, juliandate)
+
+    # if eclipsed, pert is 0
+    if eclipsed:
+        return a_pert
+
+    # if exposed then pert must be calc'd
+    a_pert = -ast.SUN_PSR * coeff_ref * surf_area / mass * (r_earth_sun / r_esu)
+    return a_pert
 
 
 def oblateness_perturbation(
@@ -542,6 +614,46 @@ def oblateness_perturbation(
     return a_pert
 
 
-def n_body_perturbation():
-    raise NotImplementedError
-    return
+def n_body_perturbation(
+    r_earth_sc: Union[List, np.ndarray],
+    r_earth_body: Union[List, np.ndarray],
+    mu_body: int,
+) -> np.ndarray:
+    """
+    Compute perturbation on orbit due to n-body effects
+    Works for near-bodies (Moon) and far bodies (Sun, other planets)
+    Adapted from Eqn. 10.117-10.131 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        r_earth_sc (Union[List, np.ndarray]): Position of spacecraft w.r.t. Earth
+        r_earth_body (Union[List, np.ndarray]): Position of body w.r.t. Earth
+        mu_body (int): gravitational parameter of external body
+
+    Returns:
+        a_pert (np.ndarray): disturbance acceleration due to n-body effects:
+            [ax, ay, az]
+    """
+
+    # convert to np array
+    r_earth_sc = np.array(r_earth_sc)
+    r_earth_body = np.array(r_earth_body)
+    r_body_sc = r_earth_body - r_earth_sc
+
+    # calc magnitude of positions
+    r_eb = np.sqrt(r_earth_body.dot(r_earth_body))
+    r_sb = np.sqrt(r_body_sc.dot(r_body_sc))
+    a_pert = np.array([0, 0, 0])
+
+    # if body is sufficiently far away then need to rewrite relations
+    # digital computer
+    if np.isclose(r_sb / r_eb, 1.0, 1e-3, 1e-3):
+        # eqn. 10.130, 10.131, F.3, F.4 in Curtis
+        q = r_earth_sc.dot((2 * r_earth_body - r_earth_sc)) / (r_eb**2)
+        Fq = (q**2 - 3 * q + 3) * q / (1 + (1 - q) ** (1.5))
+        a_pert = mu_body / (r_sb**3) * (Fq * r_earth_body - r_earth_sc)
+
+    # else can use standard notation
+    else:
+        a_pert = mu_body * (r_body_sc / (r_sb**3) - r_earth_body / (r_eb**3))
+
+    return a_pert
