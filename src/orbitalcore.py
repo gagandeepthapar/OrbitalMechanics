@@ -316,7 +316,7 @@ def local_sidereal_time(date: datetime, east_long: float) -> float:
 
     Args:
         date (datetime): calendar date to compute lst from
-        east_long (float): east longitude of site from greenwich
+        east_long (float): east longitude of site from greenwich [deg]
 
     Returns:
         lst (float): local sidereal time at longitude of site
