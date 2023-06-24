@@ -11,18 +11,15 @@ This is due to the permutations of different perturbations users can implement
 Users should be able to use the basic two-body function as a stepping stone.
 
 Each perturbation method will note how to implement it within an ODE function
-Furthermore, some propagation techniques e.g., Cowell's, VoP, Encke's are not 
-    implemented as they are used when perturbations are present.
-
 """
 
 from functools import wraps
-from typing import List, Union
+from typing import List, Union, Optional, Callable
 
 import numpy as np
 
 from . import astroconsts as ast
-from .orbitalcore import sind, cosd
+from .orbitalcore import COES, coes_to_statevector, rot_x, rot_z, sind, cosd, two_body
 
 
 def event_listener():
