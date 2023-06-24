@@ -12,11 +12,17 @@ from scipy.integrate import solve_ivp
 from . import astroconsts as ast
 from .orbitalcore import ivp_result_to_dataframe
 
+"""
+CONVERSIONS
+"""
 
-def eci_to_lvlh(target_R: np.ndarray, target_V: np.ndarray) -> np.ndarray:
+
+def eci_to_lvlh(
+    target_R: Union[List, np.ndarray], target_V: Union[List, np.ndarray]
+) -> np.ndarray:
     """
     Computes rotation matrix from ECI to LVLH ref. frames
-    Adapted from AERO 452 Notes
+    Adapted from Eqn. 7.1-7.3 from "Orbital Mechanics for Engineers", Curtis
 
     Args:
         target_R (np.ndarray): target position (ECI)
@@ -37,6 +43,135 @@ def eci_to_lvlh(target_R: np.ndarray, target_V: np.ndarray) -> np.ndarray:
     Q = np.array([[*i_hat], [*j_hat], [*k_hat]])
 
     return Q
+
+
+def five_term_acceleration(
+    target_R: Union[List, np.ndarray],
+    target_V: Union[List, np.ndarray],
+    chaser_R: Union[List, np.ndarray],
+    chaser_V: Union[List, np.ndarray],
+    mu: int = ast.EARTH_MU,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Five-Term Acceleration for Relative Motion between spacecraft
+    Adapted from Alg. 7.1 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        target_R (Union[List, np.ndarray]): position of target (ECI)
+        target_V (Union[List, np.ndarray]): velocity of target (ECI)
+        chaser_R (Union[List, np.ndarray]): position of chaser (ECI)
+        chaser_V (Union[List, np.ndarray]): velocity of chaser (ECI)
+
+    Returns:
+        relR (np.ndarray): relative position of chaser w.r.t. target (LVLH)
+        relV (np.ndarray): relative velocity of chaser w.r.t. target (LVLH)
+        relA (np.ndarray): relative acceleration of chaser w.r.t. target (LVLH)
+    """
+
+    # renaming + creating np arrays
+    RT = np.array(target_R)
+    VT = np.array(target_V)
+    RC = np.array(chaser_R)
+    VC = np.array(chaser_V)
+
+    Q = eci_to_lvlh(RT, VT)
+
+    Omega = np.cross(RT, VT) / (RT.dot(RT))
+    OmegaDot = -2 * VT.dot(RT) * Omega / (RT.dot(RT))
+
+    # abs accels
+    AT = -1 * mu * RT / (RT.dot(RT)) ** (3 / 2)
+    AC = -1 * mu * RC / (RC.dot(RC)) ** (3 / 2)
+
+    # rel position
+    delR = RC - RT
+
+    # rel velocity
+    delV = VC - VT - (np.cross(Omega, delR))
+
+    # rel accel
+    delA = (
+        AC
+        - AT
+        - np.cross(OmegaDot, delR)
+        - np.cross(Omega, np.cross(Omega, delR))
+        - np.cross(2 * Omega, delV)
+    )
+
+    # convert to lvlh
+    relR = Q @ delR
+    relV = Q @ delV
+    relA = Q @ delA
+
+    return (relR, relV, relA)
+
+
+def clohessy_wiltshire_relmot(
+    delR0: Union[List, np.ndarray],
+    delV0: Union[List, np.ndarray],
+    mean_mot: float,
+    delta_t: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Clohessy-Wiltshire Equations for relative motion in a circular orbit
+    Adapted from Eqn 7.53 in "Orbital Mechanics for Engineering Students", Curtis
+
+    Args:
+        delR0 (np.ndarray): relative position of chaser
+        delV0 (np.ndarray): relative velocity of chaser
+        mean_mot (float): mean motion of bodies [rad/sec]
+        delta_t (float): time to propagate relative motion
+
+    Returns:
+        delRF (np.ndarray): relative position of chaser at time end
+        delVF (np.ndarray): relative velocity of chaser at time end
+    """
+
+    # convert to np arrays
+    delR0 = np.array(delR0)
+    delV0 = np.array(delV0)
+
+    n = mean_mot
+    nt = mean_mot * delta_t
+
+    # eqns. 7.53a - 7.53d in Curtis
+    Psi_rr = np.array(
+        [[4 - 3 * np.cos(nt), 0, 0], [6 * (np.sin(nt) - nt), 1, 0], [0, 0, np.cos(nt)]]
+    )
+
+    Psi_rv = np.array(
+        [
+            [1 / n * np.sin(nt), 2 / n * (1 - np.cos(nt)), 0],
+            [2 / n * (np.cos(nt) - 1), 1 / n * (4 * np.sin(nt) - 3 * nt), 0],
+            [0, 0, 1 / n * np.sin(nt)],
+        ]
+    )
+
+    Psi_vr = np.array(
+        [
+            [3 * n * np.sin(nt), 0, 0],
+            [6 * n * (np.cos(nt) - 1), 0, 0],
+            [0, 0, -n * np.sin(nt)],
+        ]
+    )
+
+    Psi_vv = np.array(
+        [
+            [np.cos(nt), 2 * np.sin(nt), 0.0],
+            [-2 * np.sin(nt), 4 * np.cos(nt) - 3, 0.0],
+            [0.0, 0.0, np.cos(nt)],
+        ]
+    )
+
+    delRF = Psi_rr @ delR0 + Psi_rv @ delV0
+    delVF = Psi_vr @ delR0 + Psi_vv @ delV0
+
+    return (delRF, delVF)
+
+
+"""
+RELATIVE MOTION PROPAGATION
+"""
 
 
 def linearized_relative_motion(
@@ -143,123 +278,6 @@ def solve_linearized_relative_motion(
 
     fdata = ivp_result_to_dataframe(ivp_sol, labels)
     return fdata
-
-
-def five_term_acceleration(
-    target_R: Union[List, np.ndarray],
-    target_V: Union[List, np.ndarray],
-    chaser_R: Union[List, np.ndarray],
-    chaser_V: Union[List, np.ndarray],
-    mu: int = ast.EARTH_MU,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Five-Term Acceleration for Relative Motion between spacecraft
-    Adapted from Alg. 7.1 from "Orbital Mechanics for Engineers", Curtis
-
-    Args:
-        target_R (Union[List, np.ndarray]): position of target (ECI)
-        target_V (Union[List, np.ndarray]): velocity of target (ECI)
-        chaser_R (Union[List, np.ndarray]): position of chaser (ECI)
-        chaser_V (Union[List, np.ndarray]): velocity of chaser (ECI)
-
-    Returns:
-        relR (np.ndarray): relative position of chaser w.r.t. target (LVLH)
-        relV (np.ndarray): relative velocity of chaser w.r.t. target (LVLH)
-        relA (np.ndarray): relative acceleration of chaser w.r.t. target (LVLH)
-    """
-
-    # renaming + creating np arrays
-    RT = np.array(target_R)
-    VT = np.array(target_V)
-    RC = np.array(chaser_R)
-    VC = np.array(chaser_V)
-
-    Q = eci_to_lvlh(RT, VT)
-
-    Omega = np.cross(RT, VT) / (RT.dot(RT))
-    OmegaDot = -2 * VT.dot(RT) * Omega / (RT.dot(RT))
-
-    # abs accels
-    AT = -1 * mu * RT / (RT.dot(RT)) ** (3 / 2)
-    AC = -1 * mu * RC / (RC.dot(RC)) ** (3 / 2)
-
-    # rel position
-    delR = RC - RT
-
-    # rel velocity
-    delV = VC - VT - (np.cross(Omega, delR))
-
-    # rel accel
-    delA = (
-        AC
-        - AT
-        - np.cross(OmegaDot, delR)
-        - np.cross(Omega, np.cross(Omega, delR))
-        - np.cross(2 * Omega, delV)
-    )
-
-    # convert to lvlh
-    relR = Q @ delR
-    relV = Q @ delV
-    relA = Q @ delA
-
-    return (relR, relV, relA)
-
-
-def clohessy_wiltshire_relmot(
-    delR0: np.ndarray, delV0: np.ndarray, mean_mot: float, delta_t: float
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Clohessy-Wiltshire Equations for relative motion in a circular orbit
-    Adapted from Eqn 7.53 in "Orbital Mechanics for Engineering Students", Curtis
-
-    Args:
-        delR0 (np.ndarray): relative position of chaser
-        delV0 (np.ndarray): relative velocity of chaser
-        mean_mot (float): mean motion of bodies
-        delta_t (float): time to propagate relative motion
-
-    Returns:
-        delRF (np.ndarray): relative position of chaser at time end
-        delVF (np.ndarray): relative velocity of chaser at time end
-    """
-
-    n = mean_mot
-    nt = mean_mot * delta_t
-
-    # eqns. 7.53a - 7.53d in Curtis
-    Psi_rr = np.array(
-        [[4 - 3 * np.cos(nt), 0, 0], [6 * (np.sin(nt) - nt), 1, 0], [0, 0, np.cos(nt)]]
-    )
-
-    Psi_rv = np.array(
-        [
-            [1 / n * np.sin(nt), 2 / n * (1 - np.cos(nt)), 0],
-            [2 / n * (np.cos(nt) - 1), 1 / n * (4 * np.sin(nt) - 3 * nt), 0],
-            [0, 0, 1 / n * np.sin(nt)],
-        ]
-    )
-
-    Psi_vr = np.array(
-        [
-            [3 * n * np.sin(nt), 0, 0],
-            [6 * n * (np.cos(nt) - 1), 0, 0],
-            [0, 0, -n * np.sin(nt)],
-        ]
-    )
-
-    Psi_vv = np.array(
-        [
-            [np.cos(nt), 2 * np.sin(nt), 0],
-            [-2 * np.sin(nt), 4 * np.cos(nt) - 3, 0],
-            [0, 0, np.cos(nt)],
-        ]
-    )
-
-    delRF = Psi_rr @ delR0 + Psi_rv @ delV0
-    delVF = Psi_vr @ delR0 + Psi_vv @ delV0
-
-    return (delRF, delVF)
 
 
 def continuous_thrust_relmot(
