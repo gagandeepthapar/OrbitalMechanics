@@ -39,6 +39,11 @@ def event_listener():
     return decorator
 
 
+"""
+PERTURBATION METHODS
+"""
+
+
 @event_listener()
 def drag_event_listener(time: float, state: Union[List, np.ndarray], opts):
     """
@@ -654,3 +659,58 @@ def n_body_perturbation(
         a_pert = mu_body * (r_body_sc / (r_sb**3) - r_earth_body / (r_eb**3))
 
     return a_pert
+
+
+"""
+PROPAGATION TECHNIQUES
+
+Modified versions of two-body propagation to include perturbations.
+Each technique has an argument, `funcs` that is a list of tuples.
+Each tuple requires the function and list of arguments
+"""
+
+
+def cowells_method(
+    time: float,
+    state: np.ndarray,
+    mu: int = ast.EARTH_MU,
+    perturbs: Optional[List[tuple[Callable, tuple]]] = None,
+) -> np.ndarray:
+    """
+    Cowell's Method for Orbit Propagation.
+    Very similar to two-body where disturbance acclerations are added onto two-body calc
+    Adapted from Chapter 10.2 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        time (float): time param for ODE call
+        state (np.ndarray): state vector of orbit:
+            [Rx, Ry, Rz, Vx, Vy, Vz]
+        mu (int): gravitational parameter of central body. Defaults to EARTH_MU.
+        perturbs (Optional[List[tuple[callable, tuple]]]): List of perturbations
+            Formatted as a *list* of tuples where the pair contains the function
+            and then its associated arguments aside from time, state, mu. I.e.,:
+                perturbs=[
+                    (oblateness_perturbation, (zonal_num, r_body)),
+                    (solar_radiation_perturbation, (juliandate, surf_area,...)),
+                    ...
+                    ]
+
+    Returns:
+        a_total (np.ndarray): acceleration of spacecraft after
+            accounting for perturbations
+    """
+    # compute standard two_body
+    a_two_body = two_body(time, state, mu)
+    a_pert = np.array([0, 0, 0])
+
+    # compute total perturbational acceleration
+    if perturbs is None:
+        return a_two_body
+
+    for func, args in perturbs:
+        a_pert += func(time, state, mu, *args)
+
+    # add peturbations into two_body and return
+    a_total = a_two_body + a_pert
+    return a_total
+
