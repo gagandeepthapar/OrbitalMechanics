@@ -182,8 +182,9 @@ def atmos_density(alt: float) -> float:
 
 
 def drag_perturbation(
-    R: Union[List, np.ndarray],
-    V: Union[List, np.ndarray],
+    time: float,
+    state: np.ndarray,
+    mu: int = ast.EARTH_MU,
     mass: float = 10,
     surf_area: float = 1,
     coeff_drag: float = 2.2,
@@ -193,8 +194,10 @@ def drag_perturbation(
     Adapted from Eqn. 10.12 from "Orbital Mechanics for Engineers", Curtis
 
     Args:
-        R (np.ndarray): Position of satellite [km]
-        V (np.ndarray): Velocity of satellite [km/s]
+        time (float): time param for ODE call (not used)
+        state (np.ndarray): state vector of satellite [km]
+        mu (int): gravitational parameter of central body. Defaults to Earth.
+            (not used)
         mass (float): Mass of satellite [kg]. Defaults to 10
         surf_area (float): Average surface area in ram direction [m2]. Defaults to 1
         coeff_drag (float): Coefficient of drag. Defaults to 2.2
@@ -204,8 +207,8 @@ def drag_perturbation(
     """
 
     # create np arrays
-    R = np.array(R)
-    V = np.array(V)
+    R = state[:3]
+    V = state[3:]
 
     # calc local density
     alt = np.sqrt(R.dot(R)) - ast.EARTH_RAD
@@ -306,8 +309,10 @@ def shadow_function(
 
 
 def solar_radiation_perturbation(
-    r_earth_sc: Union[List, np.ndarray],
-    juliandate: float,
+    time: float,
+    state: np.ndarray,
+    mu: int = ast.EARTH_MU,
+    juliandate: float = 2_451_545,
     surf_area: float = 1,
     mass: float = 10,
     coeff_ref: float = 1,
@@ -318,7 +323,7 @@ def solar_radiation_perturbation(
 
     Args:
         r_earth_sc (Union[List, np.ndarray]): position of sat w.r.t. Earth
-        juliandate (float): juliandate for satellite for solar position
+        juliandate (float): start date in juliandate format of computation
         surf_area (float): surface area of satellite [m2]. Defaults to 1.
         mass (float): mass of satellite [kg]. Defaults to 10
         coeff_ref (float): Reflectivity of satellite. Defaults to 1
@@ -328,8 +333,11 @@ def solar_radiation_perturbation(
             [ax, ay, az]
     """
 
-    # conv to np arrays
-    r_earth_sc = np.array(r_earth_sc)
+    # extract required data from args
+    r_earth_sc = state[:3]
+
+    # convert date with time argument
+    juliandate = juliandate + time / (86_400)
     r_earth_sun = solar_position(juliandate)
 
     # get magnitude of positions
@@ -351,20 +359,22 @@ def solar_radiation_perturbation(
 
 
 def oblateness_perturbation(
-    zonal_number: int,
-    R_sat: Union[List, np.ndarray],
-    R_body: int = ast.EARTH_RAD,
+    time: float,
+    state: np.ndarray,
     mu: int = ast.EARTH_MU,
+    zonal_number: int = 2,
+    R_body: int = ast.EARTH_RAD,
 ) -> np.ndarray:
     """
     Orbital perturbations caused by oblateness in the Earth
         (J2-J6, only Zonal components)
 
     Args:
-        zonal_number (int): granularity of which zonal numbers to comptue (2-6 only)
-        R_sat (np.ndarray): position vector from center of body to sat
-        R_body (int): radius of central body. Defaults to Earth
+        time (float): time param for ODE call. (not used)
+        state (np.ndarray): state vector of satellite.
         mu (int): gravitational parameter of central body. Defaults to Earth.
+        zonal_number (int): granularity of which zonal numbers to comptue (2-6 only)
+        R_body (int): radius of central body. Defaults to Earth
 
     Returns:
         accel (np.ndarray): acceleration due to oblateness:
@@ -375,9 +385,12 @@ def oblateness_perturbation(
     if zonal_number < 2 or 6 < zonal_number:
         raise ValueError("Invalid Zonal Number. Pick 2-6, inclusive.")
 
+    # define R_sat
+    R_sat = state[:3]
+
     # define J2-6 Zonal defs
     def J2(
-        r_sat: Union[List, np.ndarray],
+        r_sat: np.ndarray,
         r_body: int = ast.EARTH_RAD,
         mu: int = ast.EARTH_MU,
     ):
@@ -404,7 +417,7 @@ def oblateness_perturbation(
         return J2a
 
     def J3(
-        r_sat: Union[List, np.ndarray],
+        r_sat: np.ndarray,
         r_body: int = ast.EARTH_RAD,
         mu: int = ast.EARTH_MU,
     ):
@@ -452,7 +465,7 @@ def oblateness_perturbation(
         return J3a
 
     def J4(
-        r_sat: Union[List, np.ndarray],
+        r_sat: np.ndarray,
         r_body: int = ast.EARTH_RAD,
         mu: int = ast.EARTH_MU,
     ):
@@ -501,7 +514,7 @@ def oblateness_perturbation(
         return J4a
 
     def J5(
-        r_sat: Union[List, np.ndarray],
+        r_sat: np.ndarray,
         r_body: int = ast.EARTH_RAD,
         mu: int = ast.EARTH_MU,
     ):
@@ -546,7 +559,7 @@ def oblateness_perturbation(
         return J5a
 
     def J6(
-        r_sat: Union[List, np.ndarray],
+        r_sat: np.ndarray,
         r_body: int = ast.EARTH_RAD,
         mu: int = ast.EARTH_MU,
     ):
@@ -617,8 +630,10 @@ def oblateness_perturbation(
 
 
 def n_body_perturbation(
-    r_earth_sc: Union[List, np.ndarray],
-    r_earth_body: Union[List, np.ndarray],
+    time: float,
+    state: np.ndarray,
+    mu: int,
+    r_earth_body: np.ndarray,
     mu_body: int,
 ) -> np.ndarray:
     """
@@ -627,7 +642,9 @@ def n_body_perturbation(
     Adapted from Eqn. 10.117-10.131 from "Orbital Mechanics for Engineers", Curtis
 
     Args:
-        r_earth_sc (Union[List, np.ndarray]): Position of spacecraft w.r.t. Earth
+        time (float): time param for ODE call. (not used)
+        state (np.ndarray): state vector of satellite.
+        mu (int): gravitational parameter of central body.
         r_earth_body (Union[List, np.ndarray]): Position of body w.r.t. Earth
         mu_body (int): gravitational parameter of external body
 
@@ -636,8 +653,8 @@ def n_body_perturbation(
             [ax, ay, az]
     """
 
-    # convert to np array
-    r_earth_sc = np.array(r_earth_sc)
+    # extract data from args
+    r_earth_sc = state[:3]
     r_earth_body = np.array(r_earth_body)
     r_body_sc = r_earth_body - r_earth_sc
 
