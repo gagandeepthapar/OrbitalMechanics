@@ -778,3 +778,103 @@ def enckes_method(
 
     return np.array([*drv_state, *ddelR, *ddelV])
 
+
+def variation_of_params(
+    time: float,
+    state: np.ndarray,
+    mu: int = ast.EARTH_MU,
+    perturbs: Optional[List[tuple[Callable, tuple]]] = None,
+) -> np.ndarray:
+    """
+    Variation of Parameters Method for Orbit Propagation.
+    Propogates the orbital elements as opposed to the state vector
+        Still requires conversion to state vector for perturbation calc
+    Adapted from Chapter 10.7 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        time (float): time param for ODE call
+        state (np.ndarray): 6-element state vector of orbit:
+            [ecc, inc_rad, raan_rad, arg_peri_rad, theta_rad, h_km2s]
+
+        mu (int): gravitational parameter of central body. Defaults to EARTH_MU.
+        perturbs (Optional[List[tuple[callable, tuple]]]): List of perturbations
+            Formatted as a *list* of tuples where the pair contains the function
+            and then its associated arguments aside from time, state, mu. I.e.,:
+                perturbs=[
+                    (oblateness_perturbation, (zonal_num, r_body)),
+                    (solar_radiation_perturbation, (juliandate, surf_area,...)),
+                    ...
+                    ]
+
+    Returns:
+        a_total (np.ndarray): acceleration of spacecraft after
+            accounting for perturbations
+    """
+
+    # pack state array
+    coes = COES.from_arr(state)
+
+    # ensure params are non-zero to avoid failure
+    if coes.inc_rad == 0:
+        coes.inc_rad = 1e-8
+
+    if coes.ecc == 0:
+        coes.ecc = 1e-8
+
+    # calc helper params
+    r = coes.h**2 / (coes.mu * (1 + coes.ecc * np.cos(coes.theta_rad)))
+
+    # conv to statevector for pert calcs
+    state_sv: np.ndarray = coes_to_statevector(coes)
+
+    # calc perturbation accels
+    a_pert = np.array([0, 0, 0])
+
+    if perturbs is not None:
+        for func, args in perturbs:
+            a_pert += func(time, state_sv, mu, *args)
+
+    # rotate a_pert from ECI to RSW frame
+    q_bar_Xx = rot_z(coes.arg_peri_rad) @ rot_x(coes.inc_rad) @ rot_z(coes.raan_rad)
+    q_bar_Xr = rot_z(coes.theta_rad) @ q_bar_Xx
+
+    a_pert_RSW = q_bar_Xr @ a_pert
+
+    # unpack a_pert into components
+    [a_pr, a_ps, a_pw] = a_pert_RSW
+
+    # begin d/dt of orbital elements; Eqn. 10.84 from Curtis
+    d_ecc = (
+        coes.h / mu * np.sin(coes.theta_rad) * a_pr
+        + 1
+        / (mu * coes.h)
+        * ((coes.h**2 + mu * r) * np.cos(coes.theta_rad) + mu * coes.ecc * r)
+        * a_ps
+    )
+    d_inc = r / coes.h * np.cos(coes.arg_peri_rad + coes.theta_rad) * a_pw
+    d_raan = (
+        r
+        / (coes.h * np.sin(coes.inc_rad))
+        * np.sin(coes.arg_peri_rad + coes.theta_rad)
+        * a_pw
+    )
+    d_arg = (
+        -1
+        / (coes.ecc * coes.h)
+        * (
+            coes.h**2 / mu * np.cos(coes.theta_rad) * a_pr
+            - (r + coes.h**2 / mu) * np.sin(coes.theta_rad) * a_ps
+        )
+        - (r * np.sin(coes.arg_peri_rad + coes.theta_rad))
+        / (coes.h * np.tan(coes.inc_rad))
+        * a_pw
+    )
+    d_theta = coes.h**2 / r + 1 / (coes.ecc * coes.h) * (
+        coes.h**2 / mu * np.cos(coes.theta_rad) * a_pr
+        - (r + coes.h**2 / mu) * np.sin(coes.theta_rad) * a_ps
+    )
+    d_h = r * a_ps
+
+    # return d_state in correct form:
+    # [ecc, inc_rad, raan_rad, arg_peri_rad, theta_rad, h_km2s]
+    return np.array([d_ecc, d_inc, d_raan, d_arg, d_theta, d_h])
