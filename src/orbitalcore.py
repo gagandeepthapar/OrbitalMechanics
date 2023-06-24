@@ -48,7 +48,7 @@ class COES:
     theta_rad: float
     h: Optional[float] = None
     semi_major: Optional[float] = None
-    mu: Optional[int] = ast.EARTH_MU
+    mu: int = ast.EARTH_MU
 
     def __post_init__(self):
         if (self.h is None) and (self.semi_major is None):
@@ -58,10 +58,12 @@ class COES:
             )
 
         if self.h is None:
-            self.h: float = np.sqrt(self.semi_major * self.mu * (1 - self.ecc**2))
+            self.h = np.sqrt(self.semi_major * self.mu * (1 - self.ecc**2))
 
         if self.semi_major is None:
-            self.semi_major: float = self.h**2 / self.mu * 1 / (1 - self.ecc**2)
+            self.semi_major = self.h**2 / self.mu * 1 / (1 - self.ecc**2)
+
+        self.T = 2 * np.pi * self.semi_major ** (1.5) / np.sqrt(self.mu)
 
         return
 
@@ -254,7 +256,7 @@ def atand(val: float) -> float:
 def rot_z(theta: float) -> np.ndarray:
     """
     Rotation about Z Axis
-    Adapted from Section 1.3.1 "Spacecraft Dynamics and Control", de Ruiter
+    Adapted from Eqn. 4.34 "Orbital Mechanics for Engineers", Curtis
 
     Args:
         theta (float): angle to rotate through [rad]
@@ -264,8 +266,8 @@ def rot_z(theta: float) -> np.ndarray:
     """
     return np.array(
         [
-            [np.cos(theta), -np.sin(theta), 0],
-            [np.sin(theta), np.cos(theta), 0],
+            [np.cos(theta), np.sin(theta), 0],
+            [-np.sin(theta), np.cos(theta), 0],
             [0, 0, 1],
         ]
     )
@@ -274,7 +276,7 @@ def rot_z(theta: float) -> np.ndarray:
 def rot_y(theta: float) -> np.ndarray:
     """
     Rotation about Y Axis
-    Adapted from Section 1.3.1 "Spacecraft Dynamics and Control", de Ruiter
+    Adapted from Eqn. 4.33 "Orbital Mechanics for Engineers", Curtis
 
     Args:
         theta (float): angle to rotate through [rad]
@@ -284,9 +286,9 @@ def rot_y(theta: float) -> np.ndarray:
     """
     return np.array(
         [
-            [np.cos(theta), 0, np.sin(theta)],
+            [np.cos(theta), 0, -np.sin(theta)],
             [0, 1, 0],
-            [-np.sin(theta), 0, np.cos(theta)],
+            [np.sin(theta), 0, np.cos(theta)],
         ]
     )
 
@@ -294,7 +296,7 @@ def rot_y(theta: float) -> np.ndarray:
 def rot_x(theta: float) -> np.ndarray:
     """
     Rotation about X Axis
-    Adapted from Section 1.3.1 "Spacecraft Dynamics and Control", de Ruiter
+    Adapted from Eqn. 4.32 "Orbital Mechanics for Engineers", Curtis
 
     Args:
         theta (float): angle to rotate through [rad]
@@ -305,8 +307,8 @@ def rot_x(theta: float) -> np.ndarray:
     return np.array(
         [
             [1, 0, 0],
-            [0, np.cos(theta), -np.sin(theta)],
-            [0, np.sin(theta), np.cos(theta)],
+            [0, np.cos(theta), np.sin(theta)],
+            [0, -np.sin(theta), np.cos(theta)],
         ]
     )
 
@@ -442,10 +444,10 @@ def coes_to_statevector(coes: COES, mu: int = ast.EARTH_MU) -> np.ndarray:
     )
     p_v = mu / h * np.array([-np.sin(theta), ecc + np.cos(theta), 0])
 
-    q_bar = rot_z(arg) @ rot_x(inc) @ rot_z(raan)
+    q_bar_Xx = rot_z(arg) @ rot_x(inc) @ rot_z(raan)
 
-    r_km = q_bar.T @ p_r
-    v_kms = q_bar.T @ p_v
+    r_km = q_bar_Xx.T @ p_r
+    v_kms = q_bar_Xx.T @ p_v
 
     return np.append(r_km, v_kms)
 
