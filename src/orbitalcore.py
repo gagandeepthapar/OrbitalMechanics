@@ -29,12 +29,12 @@ class COES:
     No methods but can be useful for managing variables
 
     Args:
-        h (float): angular momentum [km2/s]
         ecc (float): eccentricity [-]
         inc_rad (float): inclination [rad]
         raan_rad (float): right ascension of ascending node [rad]
         arg_peri_rad (float): argument of periapsis [rad]
         theta_rad (float): true anomaly [rad]
+        h (float): angular momentum [km2/s]
         semi_major (float): semi major axis [km]
 
     Returns:
@@ -92,6 +92,58 @@ class COES:
             )
 
         return False
+
+    def to_arr(self) -> np.ndarray:
+        """
+        Method to convert object into numpy array
+
+        Args:
+            None
+
+        Returns:
+            coes (np.ndarray): array of elements:
+                [ecc, inc_rad, raan_rad, arg_peri_rad, theta_rad, h_km2s, a_km]
+
+        """
+        return np.array(
+            [
+                self.ecc,
+                self.inc_rad,
+                self.raan_rad,
+                self.arg_peri_rad,
+                self.theta_rad,
+                self.h,
+                self.semi_major,
+            ]
+        )
+
+    @staticmethod
+    def from_arr(coes_array: np.ndarray):
+        """
+        Method to create COES object from array.
+        Requires array to be exactly 7 elements in the correct order (see below)
+
+        Args:
+            coes_array (np.ndarray): array of COES:
+                [ecc, inc_rad, raan_rad, arg_peri_rad, theta_rad, h_km2s, a_km]
+
+        Returns:
+            coes (COES): COES object
+        """
+        if len(coes_array) != 7:
+            raise ValueError(
+                "Invalid number of elements. Must be 7 in the correct order: "
+                "[ecc, inc_rad, raan_rad, arg_peri_rad, theta_rad, h_km2s, a_km]"
+            )
+        return COES(
+            coes_array[0],
+            coes_array[1],
+            coes_array[2],
+            coes_array[3],
+            coes_array[4],
+            coes_array[5],
+            coes_array[6],
+        )
 
 
 @dataclass
@@ -390,11 +442,10 @@ def coes_to_statevector(coes: COES, mu: int = ast.EARTH_MU) -> np.ndarray:
     )
     p_v = mu / h * np.array([-np.sin(theta), ecc + np.cos(theta), 0])
 
-    q_bar = rot_z(raan) @ rot_x(inc) @ rot_z(arg)
+    q_bar = rot_z(arg) @ rot_x(inc) @ rot_z(raan)
 
-    print(q_bar)
-    r_km = q_bar @ p_r
-    v_kms = q_bar @ p_v
+    r_km = q_bar.T @ p_r
+    v_kms = q_bar.T @ p_v
 
     return np.append(r_km, v_kms)
 
@@ -419,7 +470,7 @@ def statevector_to_coes(
         state = state.to_arr()
 
     # convert to np array if List
-    state = np.array(state)
+    state: np.ndarray = np.array(state)
     r = np.array(state[:3])
     v = np.array(state[3:])
     R = np.linalg.norm(r)
@@ -432,8 +483,8 @@ def statevector_to_coes(
     n_bar = np.cross(np.array([0, 0, 1]), h_bar)
     n = np.linalg.norm(n_bar)
 
-    ecc_bar = 1 / mu * ((V**2 - mu / R) * r - r.dot(v) * v)
-    ecc = np.linalg.norm(ecc_bar)
+    ecc_bar: np.ndarray = 1 / mu * ((V**2 - mu / R) * r - r.dot(v) * v)
+    ecc: float = np.linalg.norm(ecc_bar)
 
     inc = np.arccos(h_bar[2] / h)
 
@@ -569,7 +620,7 @@ def two_body(time: float, state: np.ndarray, mu: int = ast.EARTH_MU) -> np.ndarr
 
 def solve_two_body(
     state0: Union[np.ndarray, StateVector],
-    tspan: np.ndarray,
+    tspan: Union[List, np.ndarray],
     mu: int = ast.EARTH_MU,
     atol: float = 1e-8,
     rtol: float = 1e-8,
@@ -682,8 +733,8 @@ def stumpff_C(z: float) -> float:
 
 def la_grange_coefficients(
     alpha: float,
-    R0: np.ndarray,
-    V0: np.ndarray,
+    R0: Union[List, np.ndarray],
+    V0: Union[List, np.ndarray],
     delta_t: float,
     X: float,
     mu: int = ast.EARTH_MU,
@@ -701,6 +752,10 @@ def la_grange_coefficients(
     Returns:
         np.ndarray: LaGrange Coefficients in order [f, g, fdot, gdot]
     """
+
+    # create np arrays
+    R0 = np.array(R0)
+    V0 = np.array(V0)
 
     r0 = np.linalg.norm(R0)
 
@@ -722,8 +777,8 @@ Lambert Solvers
 
 
 def lambert_problem_solver(
-    R0: np.ndarray,
-    R1: np.ndarray,
+    R0: Union[List, np.ndarray],
+    R1: Union[List, np.ndarray],
     delta_t: float,
     traj_type: int = 1,
     mu: int = ast.EARTH_MU,
