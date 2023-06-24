@@ -14,6 +14,7 @@ import pandas as pd
 
 from . import astroconsts as ast
 
+# pylint: disable=W0105
 
 """
 ORBITAL CLASSES
@@ -22,6 +23,7 @@ ORBITAL CLASSES
 
 @dataclass
 class COES:
+    # pylint: disable=R0902
     """
     Class containing COES for single orbit
     No methods but can be useful for managing variables
@@ -75,14 +77,18 @@ class COES:
         )
 
     def __eq__(self, other):
+        rtol = 1e-3
+        atol = 1e-3
         if isinstance(other, COES):
             return (
-                (self.h == other.h)
-                and (self.ecc == other.ecc)
-                and (self.inc_rad == other.inc_rad)
-                and (self.raan_rad == other.raan_rad)
-                and (self.arg_peri_rad == other.arg_peri_rad)
-                and (self.semi_major == other.semi_major)
+                np.isclose(self.h, other.h, rtol=rtol, atol=atol)
+                and np.isclose(self.ecc, other.ecc, rtol=rtol, atol=atol)
+                and np.isclose(self.inc_rad, other.inc_rad, rtol=rtol, atol=atol)
+                and np.isclose(self.raan_rad, other.raan_rad, rtol=rtol, atol=atol)
+                and np.isclose(
+                    self.arg_peri_rad, other.arg_peri_rad, rtol=rtol, atol=atol
+                )
+                and np.isclose(self.semi_major, other.semi_major, rtol=rtol, atol=atol)
             )
 
         return False
@@ -90,6 +96,7 @@ class COES:
 
 @dataclass
 class StateVector:
+    # pylint: disable=C0103
     """
     Class containing State Vector for single orbit
     Simple methods but can be useful for managing variables
@@ -126,14 +133,15 @@ class StateVector:
         """
         Method to check if two state vectors are equivalent
         """
+        print("eq method")
         if isinstance(other, StateVector):
             return (
-                (self.Rx == other.Rx)
-                and (self.Ry == other.Ry)
-                and (self.Rz == other.Rz)
-                and (self.Vx == other.Vx)
-                and (self.Vy == other.Vy)
-                and (self.Vz == other.Vz)
+                np.isclose(self.Rx, other.Rx)
+                and np.isclose(self.Ry, other.Ry)
+                and np.isclose(self.Rz, other.Rz)
+                and np.isclose(self.Vx, other.Vx)
+                and np.isclose(self.Vy, other.Vy)
+                and np.isclose(self.Vz, other.Vz)
             )
 
         return False
@@ -252,6 +260,7 @@ def rot_x(theta: float) -> np.ndarray:
 
 
 def sphere_data(rad: float = 1.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # pylint: disable=C0103
     """
     Method to return array of arrays that describe a sphere with supplied radius.
     Data is useful when using `plot_surface` method from Matplotlib
@@ -265,7 +274,10 @@ def sphere_data(rad: float = 1.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         z (np.ndarray): z surface
     """
 
-    u, v = np.mgrid[0 : 2 * np.pi : 30j, 0 : np.pi : 20j]
+    u = np.linspace(0, 2 * np.pi, 50)
+    v = np.linspace(0, np.pi, 50)
+    u, v = np.meshgrid(u, v)
+    # u, v = np.mgrid[0 : 2 * np.pi : 30j, 0 : np.pi : 20j]
     x = rad * np.cos(u) * np.sin(v)
     y = rad * np.sin(u) * np.sin(v)
     z = rad * np.cos(v)
@@ -279,6 +291,7 @@ CONVERSIONS
 
 
 def juliandate(calendar_date: datetime):
+    # pylint:disable=C0103
     """
     Convert calendar date (month, day, year) into julian date
     Adapted from Algorithm 14 from...
@@ -310,9 +323,10 @@ def juliandate(calendar_date: datetime):
 
 
 def local_sidereal_time(date: datetime, east_long: float) -> float:
+    # pylint: disable=C0103
     """
     Compute local sidereal time from date
-    Adapted from Algorithm 5.3 in "Orbital Mechanics for Engineering Students", Curtis
+    Adapted from Alg. 15 in "Fundamentals of Astrodynamics and Applications", Vallado
 
     Args:
         date (datetime): calendar date to compute lst from
@@ -329,24 +343,29 @@ def local_sidereal_time(date: datetime, east_long: float) -> float:
     # calc greenwich sidereal time
     T_0 = (J_0 - 2_451_545) / (36_525)
 
-    # eqn. 5.50 in curtis
-    theta_g0 = (
-        100.4606184 + 36_000.77004 * T_0 + 0.000387933 * T_0**2 - 2.583e-8 * T_0**3
+    theta_gmst = (
+        67_310.548_41
+        + (876_600 * 3_600 + 8_640_184.812_866) * T_0
+        + 0.093_104 * T_0**2
+        - 6.2e-6 * T_0**3
     )
-    theta_g0 = np.mod(theta_g0, 360)
 
-    # eqn 5.51 in curtis
-    theta_g = theta_g0 + 360.98564724 * date.hour / 24
+    mod_op = 86_400 * np.sign(theta_gmst)
+    theta_gmst = np.mod(theta_gmst, mod_op)
+    theta_gmst_deg = theta_gmst / 240
 
-    # eqn 5.52 in curtis
-    lst = theta_g + east_long
+    theta_gmst_deg = np.mod(theta_gmst_deg, 360)
+
+    lst = theta_gmst_deg + east_long
+    lst = np.mod(lst, 360)
 
     return lst
 
 
-def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
+def coes_to_statevector(coes: COES, mu: int = ast.EARTH_MU) -> np.ndarray:
     """
     Convert COES to State Vector: R, V
+    Adapted from Algorithm 4.5, "Orbital Mechanics for Engineers", Curtis
 
     Args:
         coes (COES): orbital COES
@@ -367,14 +386,15 @@ def coes_to_statevector(coes: COES, mu: float = ast.EARTH_MU) -> np.ndarray:
         h**2
         / mu
         * (1 / (1 + ecc * np.cos(theta)))
-        * np.array([[np.cos(theta)], [np.sin(theta)], [0]])
+        * np.array([np.cos(theta), np.sin(theta), 0])
     )
-    p_v = mu / h * np.array([[-np.sin(theta)], [ecc + np.cos(theta)], [0]])
+    p_v = mu / h * np.array([-np.sin(theta), ecc + np.cos(theta), 0])
 
-    q_bar = rot_z(arg) @ rot_x(inc) @ rot_z(raan)
+    q_bar = rot_z(raan) @ rot_x(inc) @ rot_z(arg)
 
-    r_km = np.transpose(q_bar) @ p_r
-    v_kms = np.transpose(q_bar) @ p_v
+    print(q_bar)
+    r_km = q_bar @ p_r
+    v_kms = q_bar @ p_v
 
     return np.append(r_km, v_kms)
 
@@ -634,7 +654,6 @@ def stumpff_S(z: float) -> float:
     Returns:
         float: Result of Function
     """
-
     if z > 0:
         return (np.sqrt(z) - np.sin(np.sqrt(z))) / (np.sqrt(z) ** 3)
     if z < 0:
@@ -697,6 +716,11 @@ def la_grange_coefficients(
     return np.array([f, g, fdot, gdot])
 
 
+"""
+Lambert Solvers
+"""
+
+
 def lambert_problem_solver(
     R0: np.ndarray,
     R1: np.ndarray,
@@ -744,7 +768,7 @@ def lambert_problem_solver(
 
     # semi-global variables with scope in Fz, dFdz for newton's iteration
     A = np.sin(theta) * np.sqrt(r1 * r2 / (1 - np.cos(theta)))
-    z = -100
+    z: float = -100.0
 
     def y_z(z: float) -> float:
         return r1 + r2 + A * (z * stumpff_S(z) - 1) / (np.sqrt(stumpff_C(z)))
@@ -788,12 +812,13 @@ def lambert_problem_solver(
 
         return dF
 
-    # find approx z-value near sign switch
-    while F_z(z, delta_t) > 0:
-        z += 0.1
-
+    # # find approx z-value near sign switch
+    # while F_z(z, delta_t) > 0:
+    #     z += 0.1
+    #
     # solve Newton's iteration
-    ratio = 1
+    z = 0.0
+    ratio = 1.0
     it_count = 0
     while (np.abs(ratio) > 1e-8) and (it_count < 10_000):
         it_count += 1  # increment iteration counter
@@ -806,8 +831,8 @@ def lambert_problem_solver(
     gdot = 1 - y_z(z) / r2
 
     # calc V0, V1
-    V1: np.ndarray = 1 / g * (R1 - f * R0)
-    V0: np.ndarray = 1 / g * (gdot * R1 - R0)
+    V0: np.ndarray = 1 / g * (R1 - f * R0)
+    V1: np.ndarray = 1 / g * (gdot * R1 - R0)
 
     return (V0, V1)
 
