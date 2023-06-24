@@ -1,8 +1,13 @@
 # Orbital Mechanics
 Set of Orbital Mechanics functions transcribed from MATLAB or textbooks in Python to support larger Orbital Mechanics projects and classes.
 
-![Classical Orbital Elements](https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png)
-source: [Wikipedia](https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png)
+<p align="center">
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png"/>
+</p>
+
+<!-- ![Classical Orbital Elements]() -->
+
+image source: [Wikipedia](https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png)
 
 ## Structure
 The repository is broken up into 4 main packages:
