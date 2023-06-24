@@ -714,3 +714,67 @@ def cowells_method(
     a_total = a_two_body + a_pert
     return a_total
 
+
+def enckes_method(
+    time: float,
+    state: np.ndarray,
+    mu: int = ast.EARTH_MU,
+    perturbs: Optional[List[tuple[Callable, tuple]]] = None,
+) -> np.ndarray:
+    """
+    Encke's Method for Orbit Propagation.
+    Uses Two-Body orbit as reference (Osculating) and recrtifies based on
+        changes in position, velocity due to perturbations
+    Adapted from Chapter 10.1 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        time (float): time param for ODE call
+        state (np.ndarray): state vector of orbit:
+            [Rx, Ry, Rz, Vx, Vy, Vz, delRx, delRy, delRz, delVx, delVy, delVz]
+            *Ensure [delR, delV] set to 0 initially*
+
+        mu (int): gravitational parameter of central body. Defaults to EARTH_MU.
+        perturbs (Optional[List[tuple[callable, tuple]]]): List of perturbations
+            Formatted as a *list* of tuples where the pair contains the function
+            and then its associated arguments aside from time, state, mu. I.e.,:
+                perturbs=[
+                    (oblateness_perturbation, (zonal_num, r_body)),
+                    (solar_radiation_perturbation, (juliandate, surf_area,...)),
+                    ...
+                    ]
+
+    Returns:
+        a_total (np.ndarray): acceleration of spacecraft after
+            accounting for perturbations
+    """
+
+    # extract data from state vector
+    R_osc = state[:3]
+    V_osc = state[3:6]
+    delR = state[6:9]
+    delV = state[9:]
+
+    # compute est true orbit
+    R = R_osc + delR
+    V = V_osc + delV
+
+    # compute standard two-body
+    drv_state = two_body(time, np.array([*R, *V]), mu)
+
+    # compute d/dt of delR, delV
+    ddelR = delV
+
+    # need to use diff scheme to avoid floating point error for ddelV
+    q = delR.dot((2 * R - delR) / (np.sqrt(R.dot(R))))
+    Fq = (q**2 - 3 * q + 3) * q / (1 + (1 - q) ** (1.5))
+
+    # delA for no perturbs
+    ddelV = -mu * (delR - Fq) / (np.sqrt(R_osc.dot(R_osc)) ** 3)
+
+    # add perturbing effects to accel
+    if perturbs is not None:
+        for func, args in perturbs:
+            ddelV += func(time, state, mu, *args)
+
+    return np.array([*drv_state, *ddelR, *ddelV])
+
