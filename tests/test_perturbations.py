@@ -2,7 +2,6 @@
 test_perturbations
 Test cases for Perturbations module to ensure changes don't affect results
 """
-from numpy.random import sample
 import pytest
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -58,7 +57,7 @@ class TestPerturbations:
 
         return orbit
 
-    def drag_cowells(self):
+    def test_drag_cowells(self):
         """
         Example 10.1 in Curtis
         """
@@ -129,8 +128,9 @@ class TestPerturbations:
         e_raan = -0.172
         e_arg = 0.282
 
-        assert np.isclose(t_raan, e_raan, rtol=1)
-        assert np.isclose(t_arg, e_arg, rtol=1)
+        # this is incorrect
+        assert np.isclose(t_raan, e_raan, rtol=1e-3)
+        assert np.isclose(t_arg, e_arg, rtol=1e-3)
 
     def test_vop_j2(self, sample_orbit: core.COES):
         """
@@ -138,7 +138,7 @@ class TestPerturbations:
         """
         orbit = sample_orbit
         orbit_state = orbit.to_arr()[:-1]
-        j2_args = (6, ast.EARTH_RAD)
+        j2_args = (2, ast.EARTH_RAD)
 
         ivp_sol = solve_ivp(
             pert.variation_of_params,
@@ -175,5 +175,6 @@ class TestPerturbations:
         print(t_raan, e_raan)
         print(t_arg, e_arg)
 
-        assert np.isclose(t_raan, e_raan, rtol=1)
-        assert np.isclose(t_arg, e_arg, rtol=1)
+        # this is incorrect
+        assert np.isclose(t_raan, e_raan, rtol=1e-3)
+        assert np.isclose(t_arg, e_arg, rtol=1e-3)
