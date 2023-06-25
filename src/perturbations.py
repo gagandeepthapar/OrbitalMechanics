@@ -17,9 +17,20 @@ from functools import wraps
 from typing import List, Union, Optional, Callable
 
 import numpy as np
+from scipy.integrate import solve_ivp
 
 from . import astroconsts as ast
-from .orbitalcore import COES, coes_to_statevector, rot_x, rot_z, sind, cosd, two_body
+from .orbitalcore import (
+    COES,
+    coes_to_statevector,
+    rot_x,
+    rot_z,
+    sind,
+    cosd,
+    statevector_to_coes,
+    two_body,
+    universal_variable_propagation,
+)
 
 
 def event_listener():
@@ -45,7 +56,7 @@ PERTURBATION METHODS
 
 
 @event_listener()
-def drag_event_listener(time: float, state: Union[List, np.ndarray], opts):
+def drag_event_listener(time: float, state: Union[List, np.ndarray], *opts):
     """
     Event listener for `solve_ivp` to quit integration when alt below 100km
     """
@@ -168,16 +179,15 @@ def atmos_density(alt: float) -> float:
 
     # ...Determine the interpolation interval:
     i = 0
-    for j in range(27):
+    for j in range(26):
         if alt >= h[j] and alt < h[j + 1]:
             i = j
 
     if alt == 1000:
-        i = 27
+        i = 26
     # ...Exponential interpolation:
 
     rho = r[i] * np.exp(-(alt - h[i]) / H[i])
-
     return rho
 
 
@@ -223,10 +233,7 @@ def drag_perturbation(
         -0.5 * coeff_drag * surf_area / mass * rho * (1000 * vrel) ** 2 * (Vrel / vrel)
     )
 
-    # conv to km/s2
-    a_drag = a_drag / 1000
-
-    return a_drag
+    return a_drag / 1000
 
 
 def solar_position(juliandate: float) -> np.ndarray:
@@ -620,8 +627,8 @@ def oblateness_perturbation(
 
     # compile functions and compute as needed
     zonal_comps = [J2, J3, J4, J5, J6]
-    zonal_number -= 2
-    a_pert = np.array([0, 0, 0])
+    zonal_number -= 1
+    a_pert = np.array([0.0, 0.0, 0.0])
 
     for idx in range(zonal_number):
         a_pert += zonal_comps[idx](R_sat, R_body, mu)
@@ -718,38 +725,90 @@ def cowells_method(
     """
     # compute standard two_body
     a_two_body = two_body(time, state, mu)
-    a_pert = np.array([0, 0, 0])
+    a_pert = np.array([0.0, 0.0, 0.0])
 
     # compute total perturbational acceleration
-    if perturbs is None:
-        return a_two_body
-
-    for func, args in perturbs:
-        a_pert += func(time, state, mu, *args)
+    if perturbs is not None:
+        for func, args in perturbs:
+            a_pert += func(time, state, mu, *args)
 
     # add peturbations into two_body and return
-    a_total = a_two_body + a_pert
+    a_total = a_two_body + np.array([0.0, 0.0, 0.0, *a_pert])
     return a_total
 
 
-def enckes_method(
+def enckes_ode(
     time: float,
     state: np.ndarray,
+    mu: int,
+    state_osc: np.ndarray,
+    perturbs: Optional[List[tuple[Callable, tuple]]] = None,
+) -> np.ndarray:
+    """
+    Encke's Method for ODE call
+    Adapted from Appendix D.42 from "Orbital Mechanics for Engineers", Curtis
+
+    Args:
+        time (float): time param for ODE
+        state (np.ndarray): state of orbit deviation:
+            [delRx, delRy, delRz, delVx, delVy, delVz]
+        mu (int): gravitational parameter for central body
+        state_osc (np.ndarray): Osculating/reference orbit
+        perturbs (Optional[List[tuple[callable, tuple]]]): List of perturbations
+            Formatted as a *list* of tuples where the pair contains the function
+            and then its associated arguments aside from time, state, mu. I.e.,:
+                perturbs=[
+                    (oblateness_perturbation, (zonal_num, r_body)),
+                    (solar_radiation_perturbation, (juliandate, surf_area,...)),
+                    ...
+                    ]
+
+    Returns:
+        d_del (np.ndarray): delV, delA for orbit deviations
+    """
+    # unpack data
+    del_r = state[:3]
+    del_v = state[3:]
+    R_osc = state_osc[:3]
+
+    # calc perturbed orbit
+    Rpp = R_osc + del_r
+
+    r_osc = np.sqrt(R_osc.dot(R_osc))
+    rpp = np.sqrt(Rpp.dot(Rpp))
+
+    # compute perturbations
+    a_perts = np.array([0.0, 0.0, 0.0])
+    if perturbs is not None:
+        for func, args in perturbs:
+            a_perts += func(time, state_osc, mu, *args)
+
+    # compute total pert
+    F = 1 - (r_osc / rpp) ** 3
+    del_a = -mu / r_osc**3 * (del_r - F * Rpp) + a_perts
+
+    return np.array([*del_v, *del_a])
+
+
+def solve_enckes_method(
+    state: np.ndarray,
+    tspan: Union[List, np.ndarray],
     mu: int = ast.EARTH_MU,
     perturbs: Optional[List[tuple[Callable, tuple]]] = None,
+    events: Optional[List[Callable]] = None,
+    steps: int = 100,
 ) -> np.ndarray:
     """
     Encke's Method for Orbit Propagation.
     Uses Two-Body orbit as reference (Osculating) and recrtifies based on
         changes in position, velocity due to perturbations
     Adapted from Chapter 10.1 from "Orbital Mechanics for Engineers", Curtis
+    No need to pass into ODE
 
     Args:
-        time (float): time param for ODE call
         state (np.ndarray): state vector of orbit:
-            [Rx, Ry, Rz, Vx, Vy, Vz, delRx, delRy, delRz, delVx, delVy, delVz]
-            *Ensure [delR, delV] set to 0 initially*
-
+            [Rx, Ry, Rz, Vx, Vy, Vz]
+        timespan (List, np.ndarray): timespan of propagation
         mu (int): gravitational parameter of central body. Defaults to EARTH_MU.
         perturbs (Optional[List[tuple[callable, tuple]]]): List of perturbations
             Formatted as a *list* of tuples where the pair contains the function
@@ -761,39 +820,56 @@ def enckes_method(
                     ]
 
     Returns:
-        a_total (np.ndarray): acceleration of spacecraft after
-            accounting for perturbations
+        state_history (np.ndarray): state history of orbit and perturbations
     """
 
-    # extract data from state vector
-    R_osc = state[:3]
-    V_osc = state[3:6]
-    delR = state[6:9]
-    delV = state[9:]
+    # set time params
+    orbit = statevector_to_coes(state)
+    del_t = orbit.T / steps
 
-    # compute est true orbit
-    R = R_osc + delR
-    V = V_osc + delV
+    # set initial conditions
+    R0 = state[:3]
+    V0 = state[3:]
+    t0 = tspan[0]
+    t = t0 + del_t / 2
 
-    # compute standard two-body
-    drv_state = two_body(time, np.array([*R, *V]), mu)
+    state_history = np.array([[*R0, *V0]])
 
-    # compute d/dt of delR, delV
-    ddelR = delV
+    while t <= tspan[1] + del_t / 2:
+        delstate = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        d_delstate = solve_ivp(
+            enckes_ode,  # call enckes ode
+            [t0, t],  # set timespan
+            delstate,  # set initial state (all 0s)
+            atol=1e-8,  # set tolerances
+            rtol=1e-8,
+            args=(  # pass in arguments
+                mu,
+                np.array([*R0, *V0]),
+                perturbs,
+            ),
+            events=events,  # set events
+        )
 
-    # need to use diff scheme to avoid floating point error for ddelV
-    q = delR.dot((2 * R - delR) / (np.sqrt(R.dot(R))))
-    Fq = (q**2 - 3 * q + 3) * q / (1 + (1 - q) ** (1.5))
+        # compute osculating elements
+        state_osc = universal_variable_propagation(R0, V0, t - t0)
+        R_osc = state_osc[:3]
+        V_osc = state_osc[3:]
 
-    # delA for no perturbs
-    ddelV = -mu * (delR - Fq) / (np.sqrt(R_osc.dot(R_osc)) ** 3)
+        # extract data
+        d_delstate = d_delstate["y"].T
 
-    # add perturbing effects to accel
-    if perturbs is not None:
-        for func, args in perturbs:
-            ddelV += func(time, state, mu, *args)
+        # Rectify
+        R0 = R_osc + d_delstate[-1, :3]
+        V0 = V_osc + d_delstate[-1, 3:]
+        new_state = [*R0, *V0]
+        t0 = t
 
-    return np.array([*drv_state, *ddelR, *ddelV])
+        # save state history
+        state_history = np.append(state_history, np.array([new_state]), axis=0)
+        t = t + del_t
+
+    return state_history
 
 
 def variation_of_params(
