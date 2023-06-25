@@ -28,6 +28,10 @@ class COES:
     Class containing COES for single orbit
     No methods but can be useful for managing variables
 
+    User must supply at least one of the following:
+        [h (angular momentum, km2/s), semi_major (semi-major axis, km)]
+        to successfully instantiate the object
+
     Args:
         ecc (float): eccentricity [-]
         inc_rad (float): inclination [rad]
@@ -46,8 +50,9 @@ class COES:
     raan_rad: float
     arg_peri_rad: float
     theta_rad: float
-    h: Optional[float] = None
-    semi_major: Optional[float] = None
+    # *
+    h: float = None
+    semi_major: float = None
     mu: int = ast.EARTH_MU
 
     def __post_init__(self):
@@ -911,7 +916,7 @@ def universal_variable_propagation(
         mu (int): Gravitational parameter of central body
 
     Returns:
-        np.ndarray: State Vector at final time with format:
+        final_state (np.ndarray): State Vector at final time with format:
             [Rx, Ry, Rz, Vx, Vy, Vz]
     """
 
