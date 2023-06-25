@@ -905,7 +905,13 @@ def variation_of_params(
     """
 
     # pack state array
-    coes = COES.from_arr(state)
+    ecc = state[0]
+    inc = np.mod(state[1], 2 * np.pi)
+    raan = np.mod(state[2], 2 * np.pi)
+    arg = np.mod(state[3], 2 * np.pi)
+    theta = np.mod(state[4], 2 * np.pi)
+    h = state[5]
+    coes = COES(ecc, inc, raan, arg, theta, h=h)
 
     # ensure params are non-zero to avoid failure
     if coes.inc_rad == 0:
@@ -921,7 +927,7 @@ def variation_of_params(
     state_sv: np.ndarray = coes_to_statevector(coes)
 
     # calc perturbation accels
-    a_pert = np.array([0, 0, 0])
+    a_pert = np.array([0.0, 0.0, 0.0])
 
     if perturbs is not None:
         for func, args in perturbs:
@@ -962,7 +968,7 @@ def variation_of_params(
         / (coes.h * np.tan(coes.inc_rad))
         * a_pw
     )
-    d_theta = coes.h**2 / r + 1 / (coes.ecc * coes.h) * (
+    d_theta = coes.h / r**2 + 1 / (coes.ecc * coes.h) * (
         coes.h**2 / mu * np.cos(coes.theta_rad) * a_pr
         - (r + coes.h**2 / mu) * np.sin(coes.theta_rad) * a_ps
     )
