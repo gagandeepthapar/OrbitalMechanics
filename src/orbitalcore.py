@@ -50,7 +50,6 @@ class COES:
     raan_rad: float
     arg_peri_rad: float
     theta_rad: float
-    # *
     h: float = None
     semi_major: float = None
     mu: int = ast.EARTH_MU
