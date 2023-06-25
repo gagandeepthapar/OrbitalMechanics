@@ -2,15 +2,8 @@
 test_relativemotion
 Test cases for Relative Motion module to ensure changes don't affect results
 """
-from datetime import datetime
-from math import exp
-import pytest
 import numpy as np
-import pandas as pd
 
-
-from ..src import astroconsts as ast
-from ..src.orbitalcore import COES, coes_to_statevector
 from ..src import relativemotion as rm
 
 # pylint: disable=C0103
