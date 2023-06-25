@@ -1,5 +1,6 @@
 # Orbital Mechanics
 Set of Orbital Mechanics functions transcribed from MATLAB or textbooks in Python to support larger Orbital Mechanics projects and classes.
+Check out the official Pypi upload [here!](https://pypi.org/project/cpslo-orbits/)
 
 <p align="center">
   <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png"/>
@@ -8,6 +9,39 @@ Set of Orbital Mechanics functions transcribed from MATLAB or textbooks in Pytho
 <!-- ![Classical Orbital Elements]() -->
 
 image source: [Wikipedia](https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Orbit1.svg/580px-Orbit1.svg.png)
+
+## Installation
+### Method 1: Pip 
+Run the following command in the command line to install the library via pip:
+
+```
+pip install cpslo_orbits
+```
+Check to make sure it was installed with the following command:
+```
+pip list
+```
+
+### Method 2: Local Installation
+To install a local copy e.g., for development clone the repository in the directory of your choosing:
+```
+git clone https://github.com/gagandeepthapar/OrbitalMechanics.git
+```
+and install the required libraries from the `requirements.txt` file:
+```
+pip install -r requirements.txt
+```
+and install the library locally:
+```
+pip install -e .
+```
+Ensure the library is installed by running `pip list` or by running `pytest`:
+```
+cd tests/
+pytest
+```
+Pytest should run and indicate the failed/passed tests.
+Note: some tests may fail as there is ongoing development to create thorough test cases for each method presented in this module.
 
 ## Structure
 The repository is broken up into 4 main packages:
