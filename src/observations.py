@@ -379,106 +379,8 @@ def find_c2_c3(psi: float) -> tuple:
     return 1 / 2, 1 / 6
 
 
-def universal_variable_lambert_solver_vallado(
-    R_2: np.ndarray, V_2: np.ndarray, delT: float, *, max_it: int = 10_000
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Lambert Solver to solve for state at some t = t_0 + delta_t
-    Adapted from Algorithm 8 "Fundamentals of Astrodynamics and Applications", Vallado
-
-    Args:
-        R_2 (np.ndarray): Position at time 2
-        V_2 (np.ndarray): Velocity at time 2
-        delT (float): time to propagate
-
-    Returns:
-        R: Position at time t = 0 + delta_t
-        V: Velocity at time t = 0 + delta_t
-    """
-
-    r = np.linalg.norm(R_2)
-    v = np.linalg.norm(V_2)
-
-    # calculate initial conditions
-    alpha = -(v**2) / ast.EARTH_MU + 2 / r
-
-    # elliptical/circular case
-    if alpha > 1e-6:
-        x_0 = np.sqrt(ast.EARTH_MU) * delT * alpha
-
-    # parabolic case
-    elif np.abs(alpha) < 1e-6:
-        hB = np.cross(R_2, V_2)
-        p = hB.dot(hB) / ast.EARTH_MU
-
-        cot2s = 3 * np.sqrt(ast.EARTH_MU / p**3) * delT
-        s = np.arctan(1 / cot2s) / 2
-
-        tan3w = np.tan(s)
-        w = np.arctan(tan3w ** (1 / 3))
-
-        x_0 = np.sqrt(p) * 2 / np.tan(2 * w)
-
-    # hyperbolic case
-    elif alpha < -1e-6:
-        a = 1 / alpha
-
-        num = -2 * ast.EARTH_MU * alpha * delT
-        den = R_2.dot(V_2) + np.sign(delT) * np.sqrt(-ast.EARTH_MU * a) * (
-            1 - r * alpha
-        )
-
-        x_0 = np.sign(delT) * np.sqrt(-a) * np.log(num / den)
-
-    else:
-        raise ValueError("alpha: {}".format(alpha))
-
-    # begin iteration to calc parameters
-    diff = 1
-    count = 0
-    c2 = 0
-    c3 = 0
-    x_r = 0
-    psi = 0
-    while np.abs(diff) > 1e-6 and count < max_it:
-        psi = x_0**2 * alpha
-        c2, c3 = find_c2_c3(psi)
-
-        x_r = (
-            x_0**2 * c2
-            + R_2.dot(V_2) / np.sqrt(ast.EARTH_MU) * x_0 * (1 - psi * c3)
-            + r * (1 - psi * c2)
-        )
-
-        num = (
-            np.sqrt(ast.EARTH_MU) * delT
-            - x_0**3 * c3
-            - (R_2.dot(V_2)) / np.sqrt(ast.EARTH_MU) * x_0**2 * c2
-            - r * x_0 * (1 - psi * c3)
-        )
-        x_1 = x_0 + num / x_r
-
-        diff = x_0 - x_1
-        count += 1
-
-        x_0 = x_1
-
-    f = 1 - x_0**2 * c2 / r
-    g = delT - x_0**3 * c3 / np.sqrt(ast.EARTH_MU)
-    fDot = np.sqrt(ast.EARTH_MU) * x_0 * (psi * c3 - 1) / (x_r * r)
-    gDot = 1 - x_0**2 * c2 / x_r
-
-    if np.abs(f * gDot - fDot * g) > 1 + 1e-6:
-        raise ValueError("bad lagrange: {}".format(f * gDot - fDot * g))
-
-    R = f * R_2 + g * V_2
-    V = fDot * R_2 + gDot * V_2
-
-    return R, V
-
-
 """
-Initial Orbit Determination Methods
+INITIAL ORBIT DETERMINATION METHODS
 """
 
 
@@ -1044,6 +946,109 @@ def double_r_iod(
     return np.append(r_v2, v_2)
 
 
+"""
+LAMBERT/PROPAGATION SOLVERS
+"""
+
+
+def universal_variable_propagation_vallado(
+    R_2: np.ndarray, V_2: np.ndarray, delT: float, *, max_it: int = 10_000
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Lambert Solver to solve for state at some t = t_0 + delta_t
+    Adapted from Algorithm 8 "Fundamentals of Astrodynamics and Applications", Vallado
+
+    Args:
+        R_2 (np.ndarray): Position at time 2
+        V_2 (np.ndarray): Velocity at time 2
+        delT (float): time to propagate
+
+    Returns:
+        R: Position at time t = 0 + delta_t
+        V: Velocity at time t = 0 + delta_t
+    """
+
+    r = np.linalg.norm(R_2)
+    v = np.linalg.norm(V_2)
+
+    # calculate initial conditions
+    alpha = -(v**2) / ast.EARTH_MU + 2 / r
+
+    # elliptical/circular case
+    if alpha > 1e-6:
+        x_0 = np.sqrt(ast.EARTH_MU) * delT * alpha
+
+    # parabolic case
+    elif np.abs(alpha) < 1e-6:
+        hB = np.cross(R_2, V_2)
+        p = hB.dot(hB) / ast.EARTH_MU
+
+        cot2s = 3 * np.sqrt(ast.EARTH_MU / p**3) * delT
+        s = np.arctan(1 / cot2s) / 2
+
+        tan3w = np.tan(s)
+        w = np.arctan(tan3w ** (1 / 3))
+
+        x_0 = np.sqrt(p) * 2 / np.tan(2 * w)
+
+    # hyperbolic case
+    elif alpha < -1e-6:
+        a = 1 / alpha
+
+        num = -2 * ast.EARTH_MU * alpha * delT
+        den = R_2.dot(V_2) + np.sign(delT) * np.sqrt(-ast.EARTH_MU * a) * (
+            1 - r * alpha
+        )
+
+        x_0 = np.sign(delT) * np.sqrt(-a) * np.log(num / den)
+
+    else:
+        raise ValueError("alpha: {}".format(alpha))
+
+    # begin iteration to calc parameters
+    diff = 1
+    count = 0
+    c2 = 0
+    c3 = 0
+    x_r = 0
+    psi = 0
+    while np.abs(diff) > 1e-6 and count < max_it:
+        psi = x_0**2 * alpha
+        c2, c3 = find_c2_c3(psi)
+
+        x_r = (
+            x_0**2 * c2
+            + R_2.dot(V_2) / np.sqrt(ast.EARTH_MU) * x_0 * (1 - psi * c3)
+            + r * (1 - psi * c2)
+        )
+
+        num = (
+            np.sqrt(ast.EARTH_MU) * delT
+            - x_0**3 * c3
+            - (R_2.dot(V_2)) / np.sqrt(ast.EARTH_MU) * x_0**2 * c2
+            - r * x_0 * (1 - psi * c3)
+        )
+        x_1 = x_0 + num / x_r
+
+        diff = x_0 - x_1
+        count += 1
+
+        x_0 = x_1
+
+    f = 1 - x_0**2 * c2 / r
+    g = delT - x_0**3 * c3 / np.sqrt(ast.EARTH_MU)
+    fDot = np.sqrt(ast.EARTH_MU) * x_0 * (psi * c3 - 1) / (x_r * r)
+    gDot = 1 - x_0**2 * c2 / x_r
+
+    if np.abs(f * gDot - fDot * g) > 1 + 1e-6:
+        raise ValueError("bad lagrange: {}".format(f * gDot - fDot * g))
+
+    R = f * R_2 + g * V_2
+    V = fDot * R_2 + gDot * V_2
+
+    return R, V
+
+
 def izzo_gooding_lambert_solver(
     r_v1: np.ndarray,
     r_v2: np.ndarray,
@@ -1389,12 +1394,7 @@ def izzo_gooding_lambert_solver(
     return V1, V2
 
 
-""" 
-Lambert Solvers
-"""
-
-
-def uni_variable_get_delV(
+def universal_variable_lambert_solver_vallado(
     r_v1: np.ndarray,
     r_v2: np.ndarray,
     deltaT: float,
