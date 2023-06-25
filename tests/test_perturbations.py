@@ -2,14 +2,10 @@
 test_perturbations
 Test cases for Perturbations module to ensure changes don't affect results
 """
-from dataclasses import FrozenInstanceError
-from re import findall
+from numpy.random import sample
+import pytest
 import numpy as np
-from pandas.core.dtypes.cast import find_result_type
-from scipy.integrate import solve_ivp, trapz
-import matplotlib.pyplot as plt
-from scipy.integrate._ivp.common import find
-from scipy.linalg import solve
+from scipy.integrate import solve_ivp
 
 from ..src import astroconsts as ast
 from ..src import orbitalcore as core
@@ -45,6 +41,22 @@ class TestPerturbations:
     """
     Test different perturbations and propagation methods
     """
+
+    @pytest.fixture
+    def sample_orbit(self) -> core.COES:
+        # given orbit
+        rp = 6678
+        ra = 9940
+        ecc = (ra - rp) / (ra + rp)
+        semi = 0.5 * (ra + rp)
+        raan = np.deg2rad(45)
+        inc = np.deg2rad(28)
+        arg = np.deg2rad(30)
+        theta = np.deg2rad(40)
+
+        orbit = core.COES(ecc, inc, raan, arg, theta, semi_major=semi)
+
+        return orbit
 
     def drag_cowells(self):
         """
@@ -89,21 +101,12 @@ class TestPerturbations:
         fin_day = fdata.DAYS.iloc[-1]
         assert 100 < fin_day and fin_day < 110
 
-    def test_j2_enckes(self):
+    def test_j2_enckes(self, sample_orbit: core.COES):
         """
         Example 10.2 in Curtis
         """
-        # given orbit
-        rp = 6678
-        ra = 9940
-        ecc = (ra - rp) / (ra + rp)
-        semi = 0.5 * (ra + rp)
-        raan = np.deg2rad(45)
-        inc = np.deg2rad(28)
-        arg = np.deg2rad(30)
-        theta = np.deg2rad(40)
+        orbit = sample_orbit
 
-        orbit = core.COES(ecc, inc, raan, arg, theta, semi_major=semi)
         state0 = core.coes_to_statevector(orbit)
         j2_args = (6, ast.EARTH_RAD)
 
@@ -111,11 +114,7 @@ class TestPerturbations:
             state0, [0, 48 * 3_600], perturbs=[(pert.oblateness_perturbation, j2_args)]
         )
 
-        print(state_hist)
-
         f_orbit = core.statevector_to_coes(state_hist[-1])
-        print(orbit)
-        print(f_orbit)
 
         raan0 = orbit.raan_rad
         raanF = f_orbit.raan_rad
@@ -129,6 +128,52 @@ class TestPerturbations:
 
         e_raan = -0.172
         e_arg = 0.282
+
+        assert np.isclose(t_raan, e_raan, rtol=1)
+        assert np.isclose(t_arg, e_arg, rtol=1)
+
+    def test_vop_j2(self, sample_orbit: core.COES):
+        """
+        Example 10.6 in Curtis, same as 10.2
+        """
+        orbit = sample_orbit
+        orbit_state = orbit.to_arr()[:-1]
+        j2_args = (6, ast.EARTH_RAD)
+
+        ivp_sol = solve_ivp(
+            pert.variation_of_params,
+            [0, 48 * 3_600],
+            orbit_state,
+            atol=1e-5,
+            rtol=1e-5,
+            args=(
+                ast.EARTH_MU,
+                [(pert.oblateness_perturbation, j2_args)],
+            ),
+        )
+
+        labels = ["ECC", "INC", "RAAN", "ARG", "THETA", "H"]
+        f_data = core.ivp_result_to_dataframe(ivp_sol, labels)
+
+        print(f_data)
+
+        print(orbit)
+        print(f_data.iloc[-1])
+
+        raan0 = orbit.raan_rad
+        raanF = f_data.iloc[-1].RAAN
+
+        arg0 = orbit.arg_peri_rad
+        argF = f_data.iloc[-1].ARG
+
+        t_raan = (raanF - raan0) / 48
+        t_arg = (argF - arg0) / 48
+
+        e_raan = -0.172
+        e_arg = 0.282
+
+        print(t_raan, e_raan)
+        print(t_arg, e_arg)
 
         assert np.isclose(t_raan, e_raan, rtol=1)
         assert np.isclose(t_arg, e_arg, rtol=1)
