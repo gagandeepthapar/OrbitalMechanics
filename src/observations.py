@@ -54,7 +54,9 @@ class Site:
 
     @staticmethod
     def site_location_ecef(geod_lat: float, long: float, alt: float) -> np.ndarray:
-        """Calculate ECEF vector of the site
+        """
+        Calculate ECEF vector of the site
+        Adapted from AERO 557 Notes
 
         Args:
             geod_lat (float): geodetic latitude [deg]
