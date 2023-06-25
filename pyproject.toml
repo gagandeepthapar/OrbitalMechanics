@@ -3,10 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cpslo_orbitalmechanics"
-version = "0.0.2"
+name = "cpslo_orbits"
+version = "0.1.0"
 authors = [
   { name="Gagandeep Thapar", email="gsthapar+om_pkg@gmail.com" },
+  { name="Kira Abercromby", email="kabercro@calpoly.edu"}
 ]
 description = "Small and simple package for basic Orbital Mechanics principles. Structured after Cal Poly SLO AERO Orbits I-III"
 readme = "README.md"
