@@ -6,9 +6,9 @@ import pytest
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from ..src import astroconsts as ast
-from ..src import orbitalcore as core
-from ..src import perturbations as pert
+from src.cpslo_orbits import astroconsts as ast
+from src.cpslo_orbits import orbitalcore as core
+from src.cpslo_orbits import perturbations as pert
 
 # pylint: disable=C0103
 

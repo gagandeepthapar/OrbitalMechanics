@@ -4,7 +4,9 @@ Test cases for Relative Motion module to ensure changes don't affect results
 """
 import numpy as np
 
-from ..src import relativemotion as rm
+from src.cpslo_orbits import relativemotion as rm
+
+# from ..src import relativemotion as rm
 
 # pylint: disable=C0103
 

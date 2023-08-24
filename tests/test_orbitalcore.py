@@ -7,8 +7,8 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from ..src import astroconsts as ast
-from ..src import orbitalcore as core
+from src.cpslo_orbits import astroconsts as ast
+from src.cpslo_orbits import orbitalcore as core
 
 # pylint: disable=C0103
 

@@ -9,7 +9,7 @@ from datetime import datetime
 import numpy as np
 
 from . import astroconsts as ast
-from src.orbitalcore import (
+from .orbitalcore import (
     COES,
     juliandate,
     local_sidereal_time,
@@ -18,6 +18,7 @@ from src.orbitalcore import (
     stumpff_C,
     stumpff_S,
 )
+
 
 from pymap3d import eci2aer
 
